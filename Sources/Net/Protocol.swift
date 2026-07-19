@@ -28,6 +28,11 @@ enum Message: Codable {
     /// "I've burned both my digs." The host folds this into its ruling.
     case outOfDigs
 
+    /// "I just jammed you." The receiver's sonar goes to noise for a few
+    /// seconds. Carries no timing — the jammed machine runs its own clock, so
+    /// a laggy link can't lengthen or shorten the effect.
+    case jam
+
     /// Host's ruling on the round, plus the authoritative running score.
     ///
     /// Deliberately carries no coordinates. Each machine already holds the

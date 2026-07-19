@@ -112,8 +112,9 @@ extension Screen {
         case .duel:
             return [
                 "Each of you hides a target on your own trackpad.",
-                "Then you both race to find the other's.",
-                "You cannot start seeking until you've hidden yours.",
+                "Then you both race to find the other's — but the",
+                "targets drift, so a dig must be timed, not just aimed.",
+                "Two digs a round. Press J once a match to jam their sonar.",
                 "",
                 "Online plays anywhere. Local Wi-Fi needs no internet,",
                 "but both Macs must be on the same network.",
