@@ -52,6 +52,10 @@ final class GameView: NSView {
     private var lastProbeSent: (point: Point, at: Date)?
     /// Guest has asked for a rematch and is waiting on the host.
     private var rematchRequested = false
+    /// Seeking is inert until this moment. The player who planted last is
+    /// still pressing hard when the round flips, and without a beat they'd
+    /// burn a dig on the spot where they buried their own target.
+    private var seekArmedAt: Date?
 
     /// Lobby UI state.
     private enum Lobby { case none, hosting(String), joining }
@@ -153,8 +157,8 @@ final class GameView: NSView {
     /// Duel sonar. The opponent's target is already on this machine, so this is
     /// computed entirely locally — the network is never in the haptic path.
     private func stepDuel(_ now: Date) {
-        guard let match, match.canSeek, fingerCount == 1, let finger,
-              now >= nextPulseAt, !match.awaitingRuling
+        guard let match, match.canSeek, seekArmed, fingerCount == 1, let finger,
+              now >= nextPulseAt, !match.awaitingRuling, !match.isOut
         else { return }
 
         guard let distance = match.distance(from: finger) else { return }
@@ -332,20 +336,19 @@ final class GameView: NSView {
             if match.canSeek { beginSeeking() }
 
         case .foundIt:
-            // Only the host arbitrates, and only if the round is still open.
-            guard match.isHost, match.phase == .seeking || match.phase == .roundOver else { return }
-            guard match.phase == .seeking else { return }
-            let scores = match.hostResolve(winnerIsHost: false)
-            link.send(.roundResult(
-                winnerIsHost: false,
-                hostScore: scores.hostScore, guestScore: scores.guestScore,
-                targetX: match.revealedTarget?.x ?? 0, targetY: match.revealedTarget?.y ?? 0))
-            endRoundLocally()
+            // Only the host arbitrates, and only while the round is open.
+            guard match.isHost, match.phase == .seeking else { return }
+            hostConclude(.guest)
 
-        case .roundResult(let winnerIsHost, let hostScore, let guestScore, let x, let y):
+        case .outOfDigs:
+            guard match.isHost, match.phase == .seeking else { return }
+            match.markOpponentOut()
+            if let verdict = match.eliminationVerdict() { hostConclude(verdict) }
+
+        case .roundResult(let winner, let hostScore, let guestScore, let x, let y):
             guard !match.isHost else { return }
             match.applyRuling(
-                winnerIsHost: winnerIsHost, hostScore: hostScore,
+                winner: winner, hostScore: hostScore,
                 guestScore: guestScore, target: Point(x: x, y: y))
             endRoundLocally()
 
@@ -435,9 +438,31 @@ final class GameView: NSView {
         enterDuelPlay()
     }
 
+    private static let roundLeadIn: TimeInterval = 1.0
+
     private func beginSeeking() {
-        nextPulseAt = Date()
+        let armed = Date().addingTimeInterval(Self.roundLeadIn)
+        seekArmedAt = armed
+        nextPulseAt = armed          // no sonar during the lead-in either
         needsDisplay = true
+    }
+
+    /// True once the lead-in has elapsed.
+    private var seekArmed: Bool {
+        guard let seekArmedAt else { return false }
+        return Date() >= seekArmedAt
+    }
+
+    /// Host-only: publish a verdict and end the round on both machines.
+    private func hostConclude(_ winner: RoundWinner) {
+        guard let match, match.isHost else { return }
+        let scores = match.hostResolve(winner: winner)
+        link.send(.roundResult(
+            winner: winner,
+            hostScore: scores.hostScore, guestScore: scores.guestScore,
+            targetX: match.revealedTarget?.x ?? 0,
+            targetY: match.revealedTarget?.y ?? 0))
+        endRoundLocally()
     }
 
     private func endRoundLocally() {
@@ -487,6 +512,7 @@ final class GameView: NSView {
         if mode == .duel {
             guard let match, match.canSeek, !match.awaitingRuling else { return }
             shareProbe(point)
+            guard seekArmed, !match.isOut else { return }
             if touches.count >= 2 {
                 if pingArmed, let distance = match.distance(from: point) {
                     pingArmed = false
@@ -699,26 +725,36 @@ final class GameView: NSView {
             if match.canSeek { beginSeeking() }
 
         case .seeking:
-            guard !match.awaitingRuling else { return }
+            guard !match.awaitingRuling, !match.isOut else { return }
+            // The lead-in exists precisely to absorb this press.
+            guard seekArmed else {
+                flash("GET READY…")
+                return
+            }
             ripples.append(Ripple(point: finger, at: Date(), hard: true))
             switch match.dig(at: finger) {
             case .found:
                 Haptics.burst(count: 6, interval: 0.05, tap: .strong)
                 nextPulseAt = .distantFuture
                 if match.isHost {
-                    // I'm the arbiter and I got here first.
-                    let scores = match.hostResolve(winnerIsHost: true)
-                    link.send(.roundResult(
-                        winnerIsHost: true,
-                        hostScore: scores.hostScore, guestScore: scores.guestScore,
-                        targetX: match.revealedTarget?.x ?? 0,
-                        targetY: match.revealedTarget?.y ?? 0))
-                    endRoundLocally()
+                    hostConclude(.host)          // I'm the arbiter and I got here first
                 } else {
                     link.send(.foundIt)
                 }
-            case .miss:
+            case .miss(let remaining):
                 Haptics.burst(count: 2, interval: 0.13, tap: .weak)
+                flash("MISS — \(remaining) dig\(remaining == 1 ? "" : "s") left")
+            case .eliminated:
+                // Out of digs: still connected, but the round is no longer
+                // winnable for me.
+                Haptics.burst(count: 3, interval: 0.12, tap: .strong)
+                flash("OUT OF DIGS")
+                nextPulseAt = .distantFuture
+                if match.isHost {
+                    if let verdict = match.eliminationVerdict() { hostConclude(verdict) }
+                } else {
+                    link.send(.outOfDigs)
+                }
             case nil:
                 break
             }
@@ -927,7 +963,11 @@ final class GameView: NSView {
             drawRipples(in: arena)
             drawDuelMisses(match: match, in: arena)
             drawContacts(in: arena)
-            DuelRenderer.drawSeekingBanner(awaitingRuling: match.awaitingRuling, in: arena)
+            DuelRenderer.drawSeekingBanner(
+                awaitingRuling: match.awaitingRuling,
+                isOut: match.isOut,
+                leadIn: seekArmedAt.map { $0.timeIntervalSinceNow },
+                in: arena)
 
         case .roundOver, .matchOver:
             drawDuelMisses(match: match, in: arena)
