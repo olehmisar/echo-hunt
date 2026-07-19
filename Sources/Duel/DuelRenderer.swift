@@ -125,6 +125,52 @@ enum DuelRenderer {
                   size: 13, color: Draw.Palette.dim, centered: true)
     }
 
+    /// During the race each player sees two things they didn't before: the
+    /// target *they* buried, and the opponent's finger circling it. You watch
+    /// them get warmer while you hunt. It leaks nothing — their target stays
+    /// hidden, and this shows only what they've already earned by searching.
+    static func drawStandoff(
+        myTarget: Point?, opponentFinger: Point?, opponentAge: TimeInterval?,
+        in arena: NSRect
+    ) {
+        if let myTarget {
+            let center = Draw.point(myTarget, in: arena)
+            // Amber throughout the duel means "mine".
+            Draw.Palette.warn.withAlphaComponent(0.22).setFill()
+            NSBezierPath(ovalIn: NSRect(
+                x: center.x - 15, y: center.y - 15, width: 30, height: 30)).fill()
+            Draw.Palette.warn.withAlphaComponent(0.9).setStroke()
+            let ring = NSBezierPath(ovalIn: NSRect(
+                x: center.x - 10, y: center.y - 10, width: 20, height: 20))
+            ring.lineWidth = 2
+            ring.stroke()
+            Draw.text("yours", at: NSPoint(x: center.x, y: center.y + 17),
+                      size: 9, color: Draw.Palette.warn.withAlphaComponent(0.75),
+                      centered: true)
+        }
+
+        // A probe that stopped arriving means they lifted their hand or the
+        // relay stalled; fade it out rather than leaving a lie on screen.
+        guard let opponentFinger, let opponentAge, opponentAge < 1.5 else { return }
+        let alpha = 1 - min(opponentAge / 1.5, 1)
+        let center = Draw.point(opponentFinger, in: arena)
+
+        NSColor(calibratedRed: 0.95, green: 0.6, blue: 0.35, alpha: 0.16 * alpha).setFill()
+        NSBezierPath(ovalIn: NSRect(
+            x: center.x - 16, y: center.y - 16, width: 32, height: 32)).fill()
+
+        // Hollow, so it never reads as your own solid fingertip.
+        NSColor(calibratedRed: 1, green: 0.68, blue: 0.4, alpha: 0.95 * alpha).setStroke()
+        let dot = NSBezierPath(ovalIn: NSRect(
+            x: center.x - 6, y: center.y - 6, width: 12, height: 12))
+        dot.lineWidth = 2
+        dot.stroke()
+        Draw.text("them", at: NSPoint(x: center.x, y: center.y - 24),
+                  size: 9,
+                  color: NSColor(calibratedRed: 1, green: 0.68, blue: 0.4, alpha: 0.8 * alpha),
+                  centered: true)
+    }
+
     static func drawSeekingBanner(awaitingRuling: Bool, in arena: NSRect) {
         if awaitingRuling {
             Draw.text("FOUND IT — waiting for the verdict…",
