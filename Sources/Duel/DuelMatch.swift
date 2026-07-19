@@ -138,6 +138,15 @@ final class DuelMatch {
             : .roundOver
     }
 
+    /// Same opponent, same connection, scores back to nil-nil.
+    func restartMatch() {
+        myScore = 0
+        opponentScore = 0
+        round = 0
+        lastRoundWonByMe = nil
+        revealedTarget = nil
+    }
+
     func disconnect(_ reason: String) {
         phase = .disconnected(reason)
     }

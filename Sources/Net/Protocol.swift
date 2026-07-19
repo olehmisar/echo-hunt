@@ -31,6 +31,14 @@ enum Message: Codable {
     /// Host starting the next round; both sides return to planting.
     case nextRound(round: Int)
 
+    /// Guest asking for a rematch. Only the host can actually start one, so
+    /// this is a request rather than an action.
+    case rematchRequest
+
+    /// Host wiping the score and starting over. Keeps the connection, so
+    /// nobody has to trade a lobby code again.
+    case restartMatch(round: Int)
+
     case bye
 
     /// Injected by the relay, never by a player: the other side arrived, or

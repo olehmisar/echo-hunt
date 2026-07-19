@@ -182,7 +182,9 @@ enum DuelRenderer {
         }
     }
 
-    static func drawRoundOver(match: DuelMatch, in arena: NSRect) {
+    static func drawRoundOver(
+        match: DuelMatch, rematchRequested: Bool, in arena: NSRect
+    ) {
         NSColor(calibratedWhite: 0.05, alpha: 0.8).setFill()
         arena.fill()
 
@@ -218,8 +220,19 @@ enum DuelRenderer {
         y -= 40
 
         if matchOver {
-            Draw.text("esc — back to the menu", at: NSPoint(x: arena.midX, y: y),
-                      size: 13, color: Draw.Palette.faint, centered: true)
+            // A rematch keeps the connection, so nobody trades a code again.
+            let prompt: String
+            if match.isHost {
+                prompt = "return — rematch          esc — leave"
+            } else if rematchRequested {
+                prompt = "asked for a rematch — waiting for the host…"
+            } else {
+                prompt = "return — ask for a rematch          esc — leave"
+            }
+            Draw.text(prompt, at: NSPoint(x: arena.midX, y: y),
+                      size: 13,
+                      color: rematchRequested ? Draw.Palette.dim : Draw.Palette.warn,
+                      centered: true)
         } else if match.isHost {
             Draw.text("press return for the next round",
                       at: NSPoint(x: arena.midX, y: y), size: 13,

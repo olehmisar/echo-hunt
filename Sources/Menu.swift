@@ -30,6 +30,7 @@ enum MenuAction {
     case joinGame
     case hostOnline
     case joinOnline
+    case restartMatch
     case leaveMatch
 }
 
@@ -67,6 +68,7 @@ extension Screen {
         case .duelPause:
             return [
                 MenuItem(title: "Resume", action: .resume),
+                MenuItem(title: "Restart Match", action: .restartMatch),
                 MenuItem(title: "Leave Match", action: .leaveMatch),
             ]
         // Quit lives only on the main menu — leaving the game shouldn't be one
