@@ -3,10 +3,8 @@ import Foundation
 /// Where the Cloudflare relay lives. Override at runtime for local testing:
 ///   ECHO_HUNT_RELAY=ws://localhost:8787 ./build/EchoHunt.app/Contents/MacOS/EchoHunt
 enum RelayConfig {
-    /// Replace YOUR-SUBDOMAIN with what `wrangler deploy` prints. Until then
-    /// the online options report themselves as unconfigured rather than
-    /// failing with a confusing network error.
-    static let defaultURL = "wss://echo-hunt-relay.YOUR-SUBDOMAIN.workers.dev"
+    /// The deployed worker (see worker/README.md to redeploy your own).
+    static let defaultURL = "wss://echo-hunt-relay.oleh-blockchain.workers.dev"
 
     static var baseURL: String {
         ProcessInfo.processInfo.environment["ECHO_HUNT_RELAY"] ?? defaultURL
@@ -35,6 +33,10 @@ final class RelayLink: NSObject, PeerLink {
     private var session: URLSession?
     private var keepAlive: Timer?
     private var code: String?
+    /// Set while we're tearing down on purpose, so the socket's own
+    /// close/failure callbacks don't report a "disconnected" error to a player
+    /// who chose to leave.
+    private var isStopping = false
 
     func host(code: String) {
         connect(code: code, role: "host")
@@ -47,6 +49,7 @@ final class RelayLink: NSObject, PeerLink {
 
     private func connect(code: String, role: String) {
         stop()
+        isStopping = false
         self.code = code
 
         guard RelayConfig.isConfigured else {
@@ -92,6 +95,7 @@ final class RelayLink: NSObject, PeerLink {
                 }
                 self.receive()
             case .failure(let error):
+                guard !self.isStopping else { return }
                 // A rejected upgrade (bad code, lobby full) surfaces here.
                 self.status = .failed(self.describe(error))
                 self.teardown()
@@ -143,6 +147,7 @@ final class RelayLink: NSObject, PeerLink {
     }
 
     func stop() {
+        isStopping = true
         teardown()
         status = .idle
     }
@@ -153,7 +158,9 @@ extension RelayLink: URLSessionWebSocketDelegate {
         _ session: URLSession, webSocketTask: URLSessionWebSocketTask,
         didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?
     ) {
-        // Only meaningful if we hadn't already failed for a better reason.
+        // Only meaningful if we hadn't already failed for a better reason,
+        // and never when the player asked to leave.
+        if isStopping { return }
         if case .failed = status { return }
         status = .failed("Disconnected from the relay")
         teardown()
