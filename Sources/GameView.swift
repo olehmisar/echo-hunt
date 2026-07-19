@@ -38,6 +38,19 @@ final class GameView: NSView {
     /// harder" nudge waits a moment to see whether a dig follows.
     private var nudgeAt: Date?
 
+    // Duel
+    /// Which game we're in. Duel and solo never run at once.
+    private enum Mode { case solo, duel }
+    private var mode: Mode = .solo
+    private var match: DuelMatch?
+    private let transport = Transport()
+    /// Lobby UI state.
+    private enum Lobby { case none, hosting(String), joining }
+    private var lobby: Lobby = .none
+    private var typedCode = ""
+    private var lobbyStatus: String?
+    private var codeCopied = false
+
     // Menus
     private var screen: Screen? = .main
     private var selection = 0
@@ -108,6 +121,12 @@ final class GameView: NSView {
         trail.removeAll { now.timeIntervalSince($0.at) > Self.trailLifetime }
         ripples.removeAll { now.timeIntervalSince($0.at) > Self.rippleLifetime }
 
+        if mode == .duel {
+            stepDuel(now)
+            needsDisplay = true
+            return
+        }
+
         // No dig followed the click, so the press really was too soft.
         if let due = nudgeAt, now >= due {
             nudgeAt = nil
@@ -120,6 +139,18 @@ final class GameView: NSView {
         }
 
         needsDisplay = true
+    }
+
+    /// Duel sonar. The opponent's target is already on this machine, so this is
+    /// computed entirely locally — the network is never in the haptic path.
+    private func stepDuel(_ now: Date) {
+        guard let match, match.canSeek, fingerCount == 1, let finger,
+              now >= nextPulseAt, !match.awaitingRuling
+        else { return }
+
+        guard let distance = match.distance(from: finger) else { return }
+        Haptics.tap(Sonar.strength(distance: distance))
+        nextPulseAt = now.addingTimeInterval(Sonar.pulseInterval(distance: distance))
     }
 
     /// One sonar return. Near a decoy the single tick becomes a stutter — a
@@ -159,6 +190,15 @@ final class GameView: NSView {
         needsDisplay = true
     }
 
+    /// Returning to a duel resumes the shared round, which never paused on the
+    /// opponent's machine — only your own view of it did.
+    private func resumeDuel() {
+        screen = nil
+        lastTickAt = Date()
+        PointerCapture.shared.capture()
+        needsDisplay = true
+    }
+
     private func resumePlay() {
         screen = nil
         lastTickAt = Date()
@@ -185,13 +225,155 @@ final class GameView: NSView {
 
     private func activate(_ action: MenuAction) {
         switch action {
-        case .play, .restart: startNewGame()
-        case .resume: resumePlay()
-        case .mainMenu: show(.main)
+        case .play, .restart:
+            leaveDuel()          // solo must never leave a match half-connected
+            startNewGame()
+        case .resume:
+            if mode == .duel { resumeDuel() } else { resumePlay() }
+        case .mainMenu: leaveDuel(); show(.main)
         case .help: show(.help)
-        case .back: show(.main)
+        case .back:
+            if screen == .duel { show(.main) } else { show(.main) }
         case .quit: NSApp.terminate(nil)
+        case .duel: show(.duel)
+        case .hostGame: startHosting()
+        case .joinGame: startJoining()
+        case .leaveMatch: leaveDuel(); show(.main)
         }
+    }
+
+    // MARK: - Duel setup
+
+    private func startHosting() {
+        mode = .duel
+        let code = LobbyCode.generate()
+        lobby = .hosting(code)
+        codeCopied = false
+        lobbyStatus = nil
+        match = DuelMatch(isHost: true)
+        wireTransport()
+        transport.host(code: code)
+        screen = nil
+        PointerCapture.shared.release()   // lobby needs a usable pointer
+        needsDisplay = true
+    }
+
+    private func startJoining() {
+        mode = .duel
+        lobby = .joining
+        typedCode = ""
+        lobbyStatus = nil
+        match = DuelMatch(isHost: false)
+        wireTransport()
+        screen = nil
+        PointerCapture.shared.release()
+        needsDisplay = true
+    }
+
+    private func wireTransport() {
+        transport.onStatusChange = { [weak self] status in
+            guard let self else { return }
+            switch status {
+            case .connected:
+                self.lobbyStatus = nil
+                self.lobby = .none
+                self.transport.send(.hello(
+                    protocolVersion: Message.currentVersion, playerName: NSUserName()))
+                // The host owns round numbering.
+                if self.match?.isHost == true {
+                    self.match?.beginRound(1)
+                    self.transport.send(.nextRound(round: 1))
+                } else {
+                    self.match?.beginRound(1)
+                }
+                self.enterDuelPlay()
+            case .failed(let reason):
+                self.lobbyStatus = reason
+                self.match?.disconnect(reason)
+                PointerCapture.shared.release()
+            default:
+                break
+            }
+            self.needsDisplay = true
+        }
+
+        transport.onMessage = { [weak self] message in
+            self?.handle(message)
+            self?.needsDisplay = true
+        }
+    }
+
+    private func handle(_ message: Message) {
+        guard let match else { return }
+        switch message {
+        case .hello(let version, _):
+            if version != Message.currentVersion {
+                lobbyStatus = "Version mismatch — both players need the same build."
+                match.disconnect("Version mismatch")
+                transport.stop()
+            }
+
+        case .planted(let x, let y):
+            match.receiveOpponentTarget(Point(x: x, y: y))
+            if match.canSeek { beginSeeking() }
+
+        case .foundIt:
+            // Only the host arbitrates, and only if the round is still open.
+            guard match.isHost, match.phase == .seeking || match.phase == .roundOver else { return }
+            guard match.phase == .seeking else { return }
+            let scores = match.hostResolve(winnerIsHost: false)
+            transport.send(.roundResult(
+                winnerIsHost: false,
+                hostScore: scores.hostScore, guestScore: scores.guestScore,
+                targetX: match.revealedTarget?.x ?? 0, targetY: match.revealedTarget?.y ?? 0))
+            endRoundLocally()
+
+        case .roundResult(let winnerIsHost, let hostScore, let guestScore, let x, let y):
+            guard !match.isHost else { return }
+            match.applyRuling(
+                winnerIsHost: winnerIsHost, hostScore: hostScore,
+                guestScore: guestScore, target: Point(x: x, y: y))
+            endRoundLocally()
+
+        case .nextRound(let round):
+            guard !match.isHost else { return }
+            match.beginRound(round)
+            enterDuelPlay()
+
+        case .bye:
+            match.disconnect("Opponent left the match")
+            transport.stop()
+            PointerCapture.shared.release()
+        }
+    }
+
+    /// Planting and seeking both want the pointer captured and the pad ours.
+    private func enterDuelPlay() {
+        screen = nil
+        trail.removeAll()
+        ripples.removeAll()
+        nextPulseAt = .distantFuture
+        PointerCapture.shared.capture()
+    }
+
+    private func beginSeeking() {
+        nextPulseAt = Date()
+        needsDisplay = true
+    }
+
+    private func endRoundLocally() {
+        nextPulseAt = .distantFuture
+        Haptics.burst(count: 4, interval: 0.06, tap: .strong)
+    }
+
+    private func leaveDuel() {
+        if case .connected = transport.status { transport.send(.bye) }
+        transport.stop()
+        match = nil
+        mode = .solo
+        lobby = .none
+        typedCode = ""
+        lobbyStatus = nil
     }
 
     // MARK: - Touch input
@@ -221,7 +403,29 @@ final class GameView: NSView {
         finger = point
         trail.append((point, Date()))
 
-        guard screen == nil, game.phase == .hunting else { return }
+        guard screen == nil else { return }
+
+        if mode == .duel {
+            guard let match, match.canSeek, !match.awaitingRuling else { return }
+            if touches.count >= 2 {
+                if pingArmed, let distance = match.distance(from: point) {
+                    pingArmed = false
+                    Haptics.tap(.weak)
+                    let delay = Sonar.echoDelay(distance: distance)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                        guard self?.screen == nil else { return }
+                        Haptics.tap(.strong)
+                    }
+                }
+                nextPulseAt = .distantFuture
+            } else {
+                pingArmed = true
+                if nextPulseAt == .distantFuture { nextPulseAt = Date() }
+            }
+            return
+        }
+
+        guard game.phase == .hunting else { return }
 
         if touches.count >= 2 {
             if pingArmed {
@@ -243,6 +447,11 @@ final class GameView: NSView {
     // MARK: - Keyboard & mouse
 
     override func keyDown(with event: NSEvent) {
+        if mode == .duel, screen == nil, handleDuelKey(event) {
+            needsDisplay = true
+            return
+        }
+
         if let screen {
             let items = screen.items
             switch event.keyCode {
@@ -252,7 +461,8 @@ final class GameView: NSView {
             case 53:                                                            // esc
                 switch screen {
                 case .pause: resumePlay()
-                case .help: show(.main)
+                case .duelPause: resumeDuel()
+                case .help, .duel: show(.main)
                 case .main, .over: break
                 }
             default: break
@@ -267,6 +477,81 @@ final class GameView: NSView {
         default: super.keyDown(with: event)
         }
         needsDisplay = true
+    }
+
+    /// Returns true if the duel consumed the key.
+    private func handleDuelKey(_ event: NSEvent) -> Bool {
+        let command = event.modifierFlags.contains(.command)
+
+        switch lobby {
+        case .hosting(let code):
+            if event.keyCode == 53 { leaveDuel(); show(.duel); return true }   // esc
+            if event.charactersIgnoringModifiers?.lowercased() == "c" {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(code, forType: .string)
+                codeCopied = true
+                return true
+            }
+            return true   // swallow everything else while in the lobby
+
+        case .joining:
+            if event.keyCode == 53 { leaveDuel(); show(.duel); return true }
+            if command, event.charactersIgnoringModifiers?.lowercased() == "v" {
+                let pasted = NSPasteboard.general.string(forType: .string) ?? ""
+                typedCode = LobbyCode.normalize(pasted)
+                return true
+            }
+            if event.keyCode == 51 {                                          // delete
+                if !typedCode.isEmpty { typedCode.removeLast() }
+                return true
+            }
+            if event.keyCode == 36 || event.keyCode == 76 {                   // return
+                guard LobbyCode.isComplete(typedCode) else {
+                    lobbyStatus = "Enter all \(LobbyCode.length) characters."
+                    return true
+                }
+                lobbyStatus = "Searching for \(typedCode)…"
+                transport.join(code: typedCode)
+                return true
+            }
+            if let characters = event.charactersIgnoringModifiers, !command {
+                let filtered = LobbyCode.normalize(typedCode + characters)
+                typedCode = filtered
+            }
+            return true
+
+        case .none:
+            break
+        }
+
+        guard let match else { return false }
+
+        switch match.phase {
+        case .planting, .waitingForOpponent, .seeking:
+            if event.keyCode == 53 { show(.duelPause); return true }
+            if event.keyCode == 49 { duelDig(); return true }                 // space
+            return false
+        case .roundOver:
+            // Only the host advances, so both machines stay on the same round.
+            if (event.keyCode == 36 || event.keyCode == 76), match.isHost {
+                let next = match.round + 1
+                match.beginRound(next)
+                transport.send(.nextRound(round: next))
+                enterDuelPlay()
+                return true
+            }
+            if event.keyCode == 53 { show(.duelPause); return true }
+            return true
+        case .matchOver, .disconnected:
+            if event.keyCode == 53 || event.keyCode == 36 {
+                leaveDuel()
+                show(.main)
+                return true
+            }
+            return true
+        case .lobby:
+            return false
+        }
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -301,7 +586,56 @@ final class GameView: NSView {
     /// Force click digs at the current finger position.
     override func pressureChange(with event: NSEvent) {
         guard screen == nil else { return }
-        if event.stage >= 2 { dig() }
+        guard event.stage >= 2 else { return }
+        if mode == .duel { duelDig() } else { dig() }
+    }
+
+    /// One control, two meanings: bury during planting, dig during seeking.
+    private func duelDig() {
+        guard let match, let finger else { return }
+
+        switch match.phase {
+        case .planting:
+            guard match.plant(at: finger) else {
+                // Outside the legal region — refuse, and say so by feel too.
+                Haptics.burst(count: 2, interval: 0.09, tap: .weak)
+                flash("TOO CLOSE TO THE EDGE")
+                return
+            }
+            ripples.append(Ripple(point: finger, at: Date(), hard: true))
+            Haptics.burst(count: 3, interval: 0.07, tap: .strong)
+            transport.send(.planted(x: finger.x, y: finger.y))
+            if match.canSeek { beginSeeking() }
+
+        case .seeking:
+            guard !match.awaitingRuling else { return }
+            ripples.append(Ripple(point: finger, at: Date(), hard: true))
+            switch match.dig(at: finger) {
+            case .found:
+                Haptics.burst(count: 6, interval: 0.05, tap: .strong)
+                nextPulseAt = .distantFuture
+                if match.isHost {
+                    // I'm the arbiter and I got here first.
+                    let scores = match.hostResolve(winnerIsHost: true)
+                    transport.send(.roundResult(
+                        winnerIsHost: true,
+                        hostScore: scores.hostScore, guestScore: scores.guestScore,
+                        targetX: match.revealedTarget?.x ?? 0,
+                        targetY: match.revealedTarget?.y ?? 0))
+                    endRoundLocally()
+                } else {
+                    transport.send(.foundIt)
+                }
+            case .miss:
+                Haptics.burst(count: 2, interval: 0.13, tap: .weak)
+            case nil:
+                break
+            }
+
+        default:
+            break
+        }
+        needsDisplay = true
     }
 
     private func dig() {
@@ -348,6 +682,11 @@ final class GameView: NSView {
         NSColor(calibratedWhite: 0.22, alpha: 1).setStroke()
         path.lineWidth = 1
         path.stroke()
+
+        if mode == .duel, screen == nil {
+            drawDuel(in: arena)
+            return
+        }
 
         if game.phase == .reveal { drawReveal(in: arena) }
         if screen == nil {
@@ -461,6 +800,74 @@ final class GameView: NSView {
 
     /// Where your fingers are on the pad. Note this shows *you*, never the
     /// target — the hunt is still blind, you just aren't lost anymore.
+    private func drawDuel(in arena: NSRect) {
+        switch lobby {
+        case .hosting(let code):
+            var connected = false
+            if case .connected = transport.status { connected = true }
+            DuelRenderer.drawHostLobby(
+                code: code, connected: connected, in: arena, copied: codeCopied)
+            return
+        case .joining:
+            DuelRenderer.drawJoinEntry(typed: typedCode, status: lobbyStatus, in: arena)
+            return
+        case .none:
+            break
+        }
+
+        guard let match else { return }
+
+        switch match.phase {
+        case .planting:
+            DuelRenderer.drawPlanting(match: match, finger: finger, in: arena)
+            drawRipples(in: arena)
+            drawContacts(in: arena)
+
+        case .waitingForOpponent:
+            DuelRenderer.drawWaitingForOpponent(myTarget: match.myTarget, in: arena)
+            drawContacts(in: arena)
+
+        case .seeking:
+            drawRipples(in: arena)
+            drawDuelMisses(match: match, in: arena)
+            drawContacts(in: arena)
+            DuelRenderer.drawSeekingBanner(awaitingRuling: match.awaitingRuling, in: arena)
+
+        case .roundOver, .matchOver:
+            drawDuelMisses(match: match, in: arena)
+            DuelRenderer.drawRoundOver(match: match, in: arena)
+
+        case .disconnected(let reason):
+            DuelRenderer.drawDisconnected(reason: reason, in: arena)
+
+        case .lobby:
+            break
+        }
+
+        DuelRenderer.drawHUD(match: match, in: bounds)
+        drawFlash(in: arena)
+        if match.phase == .planting || match.phase == .seeking {
+            Draw.text("FORCE CLICK OR SPACE — \(match.phase == .planting ? "BURY" : "DIG")"
+                      + "          ESC — MENU",
+                      at: NSPoint(x: bounds.midX, y: 38), size: 11,
+                      color: Draw.Palette.faint, centered: true, tracking: 2)
+        }
+    }
+
+    private func drawDuelMisses(match: DuelMatch, in arena: NSRect) {
+        for miss in match.misses {
+            let point = screenPoint(miss, in: arena)
+            NSColor(calibratedRed: 0.92, green: 0.38, blue: 0.36, alpha: 0.85).setStroke()
+            let cross = NSBezierPath()
+            cross.move(to: NSPoint(x: point.x - 6, y: point.y - 6))
+            cross.line(to: NSPoint(x: point.x + 6, y: point.y + 6))
+            cross.move(to: NSPoint(x: point.x - 6, y: point.y + 6))
+            cross.line(to: NSPoint(x: point.x + 6, y: point.y - 6))
+            cross.lineWidth = 2
+            cross.stroke()
+        }
+    }
+
     /// Wrong digs stay on the board for the rest of the round — they're places
     /// you've ruled out, and you paid for that knowledge.
     private func drawMisses(in arena: NSRect) {

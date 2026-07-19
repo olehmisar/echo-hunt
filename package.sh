@@ -11,10 +11,10 @@ rm -rf dist
 mkdir -p "$MACOS"
 
 echo "Compiling arm64…"
-swiftc -O -target "arm64-apple-macos$DEPLOY_TARGET" Sources/*.swift -o dist/EchoHunt-arm64
+swiftc -O -target "arm64-apple-macos$DEPLOY_TARGET" $(find Sources -name "*.swift") -o dist/EchoHunt-arm64
 
 echo "Compiling x86_64…"
-swiftc -O -target "x86_64-apple-macos$DEPLOY_TARGET" Sources/*.swift -o dist/EchoHunt-x86_64
+swiftc -O -target "x86_64-apple-macos$DEPLOY_TARGET" $(find Sources -name "*.swift") -o dist/EchoHunt-x86_64
 
 echo "Merging into a universal binary…"
 lipo -create dist/EchoHunt-arm64 dist/EchoHunt-x86_64 -output "$MACOS/EchoHunt"
@@ -35,6 +35,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>$DEPLOY_TARGET</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSLocalNetworkUsageDescription</key><string>Echo Hunt finds your opponent's Mac on the local network to play a two-player match.</string>
+  <key>NSBonjourServices</key>
+  <array><string>_echohunt._tcp</string></array>
   <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
 </dict>
 </plist>
