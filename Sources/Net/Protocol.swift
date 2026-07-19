@@ -16,6 +16,12 @@ enum Message: Codable {
     /// hunts this point.
     case planted(x: Double, y: Double)
 
+    /// Where my finger is, while seeking. Purely cosmetic: it lets each
+    /// player watch the other grope around the target they buried. Throttled,
+    /// and never in the haptic path — if these arrive late or not at all, the
+    /// game still plays identically.
+    case probe(x: Double, y: Double)
+
     /// Guest claiming a find. The host arbitrates.
     case foundIt
 

@@ -45,6 +45,12 @@ final class GameView: NSView {
     private var match: DuelMatch?
     /// Whichever way we're reaching the opponent this match.
     private var link: PeerLink = LocalLink()
+    /// The opponent's finger, as of their last probe. Stale probes are
+    /// dropped rather than left frozen on screen.
+    private var opponentFinger: Point?
+    private var opponentFingerAt: Date?
+    private var lastProbeSent: (point: Point, at: Date)?
+
     /// Lobby UI state.
     private enum Lobby { case none, hosting(String), joining }
     private var lobby: Lobby = .none
@@ -345,6 +351,10 @@ final class GameView: NSView {
             match.beginRound(round)
             enterDuelPlay()
 
+        case .probe(let x, let y):
+            opponentFinger = Point(x: x, y: y)
+            opponentFingerAt = Date()
+
         case .peerJoined, .peerLeft:
             break        // handled by the link as a status change
 
@@ -358,10 +368,31 @@ final class GameView: NSView {
     /// Planting and seeking both want the pointer captured and the pad ours.
     private func enterDuelPlay() {
         screen = nil
+        opponentFinger = nil
+        opponentFingerAt = nil
+        lastProbeSent = nil
         trail.removeAll()
         ripples.removeAll()
         nextPulseAt = .distantFuture
         PointerCapture.shared.capture()
+    }
+
+    /// Stream my finger to the opponent so they can watch me hunt. Throttled
+    /// hard — 12/second, and only when the finger has actually moved — because
+    /// every message is a Durable Object request, and this is decoration
+    /// rather than gameplay.
+    private static let probeInterval: TimeInterval = 1.0 / 12
+    private static let probeMinimumMove = 0.008
+
+    private func shareProbe(_ point: Point) {
+        let now = Date()
+        if let last = lastProbeSent {
+            guard now.timeIntervalSince(last.at) >= Self.probeInterval,
+                  point.distance(to: last.point) >= Self.probeMinimumMove
+            else { return }
+        }
+        lastProbeSent = (point, now)
+        link.send(.probe(x: point.x, y: point.y))
     }
 
     private func beginSeeking() {
@@ -415,6 +446,7 @@ final class GameView: NSView {
 
         if mode == .duel {
             guard let match, match.canSeek, !match.awaitingRuling else { return }
+            shareProbe(point)
             if touches.count >= 2 {
                 if pingArmed, let distance = match.distance(from: point) {
                     pingArmed = false
@@ -836,6 +868,11 @@ final class GameView: NSView {
             drawContacts(in: arena)
 
         case .seeking:
+            DuelRenderer.drawStandoff(
+                myTarget: match.myTarget,
+                opponentFinger: opponentFinger,
+                opponentAge: opponentFingerAt.map { Date().timeIntervalSince($0) },
+                in: arena)
             drawRipples(in: arena)
             drawDuelMisses(match: match, in: arena)
             drawContacts(in: arena)
