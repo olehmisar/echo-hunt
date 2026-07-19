@@ -62,6 +62,15 @@ final class GameView: NSView {
     /// A new round fades up from black over this window, so the previous
     /// result gets a beat to land instead of a hard cut (touch 6).
     private var duelFadeFrom: Date?
+    /// The drift paths for both buried targets this round. Positions are
+    /// recomputed every frame from these and pushed into the match.
+    private var myPath: MovingTarget?
+    private var theirPath: MovingTarget?
+    /// While set and in the future, my sonar is scrambled to noise.
+    private var jammedUntil: Date?
+    private var nextJamNoiseAt: Date?
+
+    private static let jamDuration: TimeInterval = 3.0
     /// Probes stay locked until the player lifts the finger they planted with.
     /// Otherwise the first thing streamed to the opponent is a marker sitting
     /// exactly on the target you just buried — handing them the round.
@@ -175,14 +184,36 @@ final class GameView: NSView {
     /// computed entirely locally — the network is never in the haptic path.
     private func stepDuel(_ now: Date) {
         tickCountdown(now)
+        driftTargets(now)
 
         guard let match, match.canSeek, seekArmed, fingerCount == 1, let finger,
               now >= nextPulseAt, !match.awaitingRuling, !match.isOut
         else { return }
 
+        // Jammed: the sonar lies. Random strength at random spacing, telling
+        // you nothing, until the effect wears off.
+        if let until = jammedUntil, now < until {
+            if now >= (nextJamNoiseAt ?? .distantPast) {
+                Haptics.tap(Bool.random() ? .weak : .strong)
+                nextJamNoiseAt = now.addingTimeInterval(.random(in: 0.05...0.28))
+            }
+            return
+        }
+
         guard let distance = match.distance(from: finger) else { return }
         emitReturn(Sonar.returnTexture(distance: distance))
         nextPulseAt = now.addingTimeInterval(Sonar.pulseInterval(distance: distance))
+    }
+
+    /// Push each target's current drifted position into the match, so digging,
+    /// sonar and the reveal all read a moving point without knowing it moves.
+    private func driftTargets(_ now: Date) {
+        guard let match, match.phase == .seeking else { return }
+        // Motion starts when seeking arms; frozen at the centre before that.
+        let elapsed = seekArmed ? max(0, now.timeIntervalSince(seekArmedAt ?? now)) : 0
+        match.moveTargets(
+            mine: myPath?.position(at: elapsed),
+            theirs: theirPath?.position(at: elapsed))
     }
 
     /// A single sonar return, textured by proximity (touch 2).
@@ -380,7 +411,9 @@ final class GameView: NSView {
             }
 
         case .planted(let x, let y):
-            match.receiveOpponentTarget(Point(x: x, y: y))
+            let center = Point(x: x, y: y)
+            match.receiveOpponentTarget(center)
+            theirPath = MovingTarget(center: center)   // their target will drift from here
             if match.canSeek { beginSeeking() }
 
         case .foundIt:
@@ -392,6 +425,14 @@ final class GameView: NSView {
             guard match.isHost, match.phase == .seeking else { return }
             match.markOpponentOut()
             if let verdict = match.eliminationVerdict() { hostConclude(verdict) }
+
+        case .jam:
+            // The opponent spent their jam on me: my sonar goes to noise.
+            guard match.phase == .seeking else { return }
+            jammedUntil = Date().addingTimeInterval(Self.jamDuration)
+            nextJamNoiseAt = Date()
+            Haptics.burst(count: 4, interval: 0.05, tap: .weak)
+            flash("SONAR JAMMED")
 
         case .roundResult(let winner, let hostScore, let guestScore):
             guard !match.isHost else { return }
@@ -447,6 +488,9 @@ final class GameView: NSView {
         trail.removeAll()
         ripples.removeAll()
         nextPulseAt = .distantFuture
+        myPath = nil
+        theirPath = nil
+        jammedUntil = nil            // a jam doesn't carry into the next round
         duelFadeFrom = Date()        // fade the new round up from black (touch 6)
         PointerCapture.shared.capture()
     }
@@ -738,6 +782,17 @@ final class GameView: NSView {
                 if !event.isARepeat { duelDig() }
                 return true
             }
+            // J — spend the match's one jam on the opponent.
+            if event.charactersIgnoringModifiers?.lowercased() == "j", !event.isARepeat {
+                if match.phase == .seeking, seekArmed, match.useJam() {
+                    link.send(.jam)
+                    Haptics.play(.found)
+                    flash("JAMMED THEM — 3s")
+                } else if match.myJamUsed {
+                    flash("JAM ALREADY USED")
+                }
+                return true
+            }
             return false
         case .roundOver:
             // Only the host advances, so both machines stay on the same round.
@@ -848,6 +903,7 @@ final class GameView: NSView {
             }
             ripples.append(Ripple(point: finger, at: Date(), hard: true))
             Haptics.play(.plant)         // weighty, committed (touch 1)
+            myPath = MovingTarget(center: finger)      // my target drifts from where I buried it
             link.send(.planted(x: finger.x, y: finger.y))
             if match.canSeek { beginSeeking() }
 
@@ -1099,6 +1155,7 @@ final class GameView: NSView {
                 leadIn: seekArmedAt.map { $0.timeIntervalSinceNow },
                 stillHolding: !probesUnlocked && !contacts.isEmpty,
                 in: arena)
+            drawJammed(in: arena)
 
         case .roundOver, .matchOver:
             drawDuelMisses(match: match, in: arena)
@@ -1115,14 +1172,35 @@ final class GameView: NSView {
         DuelRenderer.drawHUD(match: match, in: bounds)
         drawFlash(in: arena)
         if match.phase == .planting || match.phase == .seeking {
-            Draw.text("FORCE CLICK OR SPACE — \(match.phase == .planting ? "BURY" : "DIG")"
-                      + "          ESC — MENU",
-                      at: NSPoint(x: bounds.midX, y: 38), size: 11,
+            var hint = "FORCE CLICK OR SPACE — \(match.phase == .planting ? "BURY" : "DIG")"
+            // Surface the jam only when it can actually be used.
+            if match.phase == .seeking, seekArmed, !match.myJamUsed, !match.isOut {
+                hint += "          J — JAM"
+            }
+            hint += "          ESC — MENU"
+            Draw.text(hint, at: NSPoint(x: bounds.midX, y: 38), size: 11,
                       color: Draw.Palette.faint, centered: true, tracking: 2)
         }
 
         // Over everything, so the round fades up as a whole.
         drawDuelFade(in: bounds)
+    }
+
+    /// A red pulse and label while the player's own sonar is scrambled.
+    private func drawJammed(in arena: NSRect) {
+        guard let until = jammedUntil else { return }
+        let remaining = until.timeIntervalSinceNow
+        guard remaining > 0 else { return }
+        // Throb so it reads as active interference, not a static banner.
+        let throb = 0.35 + 0.35 * abs(sin(remaining * 6))
+        NSColor(calibratedRed: 0.9, green: 0.25, blue: 0.3, alpha: 0.10 * throb).setFill()
+        arena.fill()
+        Draw.text("SONAR JAMMED", at: NSPoint(x: arena.midX, y: arena.midY + 8),
+                  size: 26, color: NSColor(calibratedRed: 1, green: 0.4, blue: 0.4, alpha: throb + 0.3),
+                  centered: true, tracking: 6)
+        Draw.text(String(format: "%.1f", remaining),
+                  at: NSPoint(x: arena.midX, y: arena.midY - 24),
+                  size: 15, color: Draw.Palette.dim, centered: true)
     }
 
     private func drawDuelMisses(match: DuelMatch, in arena: NSRect) {

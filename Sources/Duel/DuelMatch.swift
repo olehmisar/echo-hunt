@@ -67,6 +67,9 @@ final class DuelMatch {
     /// True once I've found it and am waiting on the host's ruling.
     private(set) var awaitingRuling = false
 
+    /// One jam per whole match, not per round. Scrambles the opponent's sonar.
+    private(set) var myJamUsed = false
+
     static let winsNeeded = 3
     static let digsPerRound = 2
 
@@ -137,6 +140,23 @@ final class DuelMatch {
         opponentOut = true
     }
 
+    /// Both targets drift during a round; the view feeds their live positions
+    /// here each frame so digging, sonar, and the reveal all read the current
+    /// spot without any of them knowing about motion.
+    func moveTargets(mine: Point?, theirs: Point?) {
+        guard phase == .seeking else { return }
+        if let mine { myTarget = mine }
+        if let theirs { opponentTarget = theirs }
+    }
+
+    /// Spend the match's single jam. Returns false if already used or not in a
+    /// live round.
+    func useJam() -> Bool {
+        guard phase == .seeking, !myJamUsed else { return false }
+        myJamUsed = true
+        return true
+    }
+
     /// Host-side: does running out of digs decide the round yet? Losing your
     /// last dig hands the round to the opponent — unless they're out too, in
     /// which case nobody takes it.
@@ -199,6 +219,7 @@ final class DuelMatch {
         round = 0
         lastRoundWonByMe = nil
         revealedTarget = nil
+        myJamUsed = false          // jam refreshes with a new match, not a round
     }
 
     func disconnect(_ reason: String) {

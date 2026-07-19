@@ -331,6 +331,7 @@ enum DuelRenderer {
             + "     FIRST TO \(DuelMatch.winsNeeded)"
         if match.phase == .seeking {
             hud += "     DIGS \(match.digsRemaining)/\(DuelMatch.digsPerRound)"
+            hud += match.myJamUsed ? "     JAM SPENT" : "     JAM READY"
         }
         hud += "     \(role)"
         Draw.text(hud, at: NSPoint(x: bounds.midX, y: 62), size: 11,
