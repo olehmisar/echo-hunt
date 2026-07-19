@@ -218,7 +218,7 @@ enum DuelRenderer {
     }
 
     static func drawRoundOver(
-        match: DuelMatch, rematchRequested: Bool, in arena: NSRect
+        match: DuelMatch, rematchRequested: Bool, trajectory: [Point], in arena: NSRect
     ) {
         NSColor(calibratedWhite: 0.05, alpha: 0.8).setFill()
         arena.fill()
@@ -226,6 +226,31 @@ enum DuelRenderer {
         let drawn = match.lastRoundWasDraw
         let won = match.lastRoundWonByMe ?? false
         let matchOver = match.phase == .matchOver
+
+        // The whole path the target drifted, faint at the start (where it was
+        // buried) and brightening toward where it ended — so a loser can see it
+        // slipped away, not just where it finished.
+        if trajectory.count > 1 {
+            let color = drawn ? Draw.Palette.warn : (won ? Draw.Palette.good : Draw.Palette.bad)
+            for i in 1..<trajectory.count {
+                let frac = Double(i) / Double(trajectory.count - 1)
+                let segment = NSBezierPath()
+                segment.move(to: Draw.point(trajectory[i - 1], in: arena))
+                segment.line(to: Draw.point(trajectory[i], in: arena))
+                segment.lineWidth = 1.5
+                color.withAlphaComponent(0.12 + 0.5 * frac).setStroke()
+                segment.stroke()
+            }
+            // Mark where it started.
+            let start = Draw.point(trajectory[0], in: arena)
+            color.withAlphaComponent(0.5).setStroke()
+            let startRing = NSBezierPath(ovalIn: NSRect(
+                x: start.x - 5, y: start.y - 5, width: 10, height: 10))
+            startRing.lineWidth = 1.5
+            startRing.stroke()
+            Draw.text("buried here", at: NSPoint(x: start.x, y: start.y - 16),
+                      size: 9, color: color.withAlphaComponent(0.6), centered: true)
+        }
 
         // The target this player was hunting — the one thing a loser most
         // wants to see. Ringed and labelled rather than left as a bare dot,
