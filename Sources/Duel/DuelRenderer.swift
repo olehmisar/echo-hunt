@@ -172,15 +172,35 @@ enum DuelRenderer {
     }
 
     static func drawSeekingBanner(
-        awaitingRuling: Bool, isOut: Bool, leadIn: TimeInterval?, in arena: NSRect
+        awaitingRuling: Bool, isOut: Bool, leadIn: TimeInterval?,
+        stillHolding: Bool, in arena: NSRect
     ) {
         if let leadIn, leadIn > 0 {
-            // Big and central: this is a "don't press yet" sign.
-            Draw.text("GET READY", at: NSPoint(x: arena.midX, y: arena.midY + 10),
-                      size: 28, color: Draw.Palette.warn, centered: true, tracking: 8)
-            Draw.text(String(format: "%.1f", leadIn),
-                      at: NSPoint(x: arena.midX, y: arena.midY - 30),
-                      size: 20, color: Draw.Palette.dim, centered: true)
+            // The instruction matters more than the countdown: a finger left
+            // resting on the spot you just planted is a marker pointing at
+            // your own target.
+            Draw.text("LIFT YOUR FINGER", at: NSPoint(x: arena.midX, y: arena.midY + 46),
+                      size: 30, color: stillHolding ? Draw.Palette.bad : Draw.Palette.good,
+                      centered: true, tracking: 8)
+            Draw.text(stillHolding
+                        ? "they can see where your finger is — you're pointing at your own target"
+                        : "good — they can't see you now",
+                      at: NSPoint(x: arena.midX, y: arena.midY + 12),
+                      size: 14,
+                      color: stillHolding ? Draw.Palette.bad : Draw.Palette.dim,
+                      centered: true)
+            Draw.text(String(format: "%.0f", ceil(leadIn)),
+                      at: NSPoint(x: arena.midX, y: arena.midY - 46),
+                      size: 40, color: Draw.Palette.bright, centered: true)
+            return
+        }
+
+        // The lead-in is over but they never lifted, so probing is still
+        // suppressed. Say why, or it looks like the game is broken.
+        if stillHolding {
+            Draw.text("LIFT YOUR FINGER — you're still pointing at your target",
+                      at: NSPoint(x: arena.midX, y: arena.maxY - 44),
+                      size: 14, color: Draw.Palette.bad, centered: true)
             return
         }
         if awaitingRuling {

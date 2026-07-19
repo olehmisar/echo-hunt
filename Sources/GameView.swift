@@ -56,6 +56,10 @@ final class GameView: NSView {
     /// still pressing hard when the round flips, and without a beat they'd
     /// burn a dig on the spot where they buried their own target.
     private var seekArmedAt: Date?
+    /// Probes stay locked until the player lifts the finger they planted with.
+    /// Otherwise the first thing streamed to the opponent is a marker sitting
+    /// exactly on the target you just buried — handing them the round.
+    private var probesUnlocked = false
 
     /// Lobby UI state.
     private enum Lobby { case none, hosting(String), joining }
@@ -390,6 +394,7 @@ final class GameView: NSView {
         opponentFingerAt = nil
         lastProbeSent = nil
         rematchRequested = false
+        probesUnlocked = false
         trail.removeAll()
         ripples.removeAll()
         nextPulseAt = .distantFuture
@@ -404,6 +409,8 @@ final class GameView: NSView {
     private static let probeMinimumMove = 0.008
 
     private func shareProbe(_ point: Point) {
+        // Silence until they've lifted: see `probesUnlocked`.
+        guard probesUnlocked else { return }
         let now = Date()
         if let last = lastProbeSent {
             guard now.timeIntervalSince(last.at) >= Self.probeInterval,
@@ -438,7 +445,7 @@ final class GameView: NSView {
         enterDuelPlay()
     }
 
-    private static let roundLeadIn: TimeInterval = 1.0
+    private static let roundLeadIn: TimeInterval = 3.0
 
     private func beginSeeking() {
         let armed = Date().addingTimeInterval(Self.roundLeadIn)
@@ -490,6 +497,8 @@ final class GameView: NSView {
             contacts = []
             nextPulseAt = .distantFuture
             pingArmed = true
+            // Hand off the pad: from here it's safe to show them where I am.
+            probesUnlocked = true
             return
         }
 
@@ -967,6 +976,7 @@ final class GameView: NSView {
                 awaitingRuling: match.awaitingRuling,
                 isOut: match.isOut,
                 leadIn: seekArmedAt.map { $0.timeIntervalSinceNow },
+                stillHolding: !probesUnlocked && !contacts.isEmpty,
                 in: arena)
 
         case .roundOver, .matchOver:
