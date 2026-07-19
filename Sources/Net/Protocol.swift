@@ -27,6 +27,12 @@ enum Message: Codable {
 
     case bye
 
+    /// Injected by the relay, never by a player: the other side arrived, or
+    /// vanished. The Bonjour link derives the same facts from its connection
+    /// state, so game code sees one story either way.
+    case peerJoined
+    case peerLeft
+
     static let currentVersion = 1
 }
 

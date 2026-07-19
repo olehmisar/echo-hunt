@@ -5,20 +5,12 @@ import Network
 /// host advertises a Bonjour service whose *instance name is the lobby code*,
 /// and the guest browses for exactly that name. Discovery and connection both
 /// happen on the local network, or over direct peer-to-peer Wi-Fi.
-final class Transport {
-    enum Status: Equatable {
-        case idle
-        case hosting(code: String)
-        case searching(code: String)
-        case connected
-        case failed(String)
-    }
-
-    private(set) var status: Status = .idle {
+final class LocalLink: PeerLink {
+    private(set) var status: LinkStatus = .idle {
         didSet { if status != oldValue { onStatusChange?(status) } }
     }
 
-    var onStatusChange: ((Status) -> Void)?
+    var onStatusChange: ((LinkStatus) -> Void)?
     var onMessage: ((Message) -> Void)?
 
     private var listener: NWListener?
@@ -67,7 +59,7 @@ final class Transport {
             }
             listener.start(queue: .main)
             self.listener = listener
-            status = .hosting(code: code)
+            status = .waitingForPeer(code: code)
         } catch {
             status = .failed("Could not host: \(error.localizedDescription)")
         }

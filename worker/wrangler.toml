@@ -1,0 +1,12 @@
+name = "echo-hunt-relay"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "Lobby"
+
+# SQLite-backed Durable Objects are the ones available on the free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Lobby"]

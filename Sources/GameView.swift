@@ -43,7 +43,8 @@ final class GameView: NSView {
     private enum Mode { case solo, duel }
     private var mode: Mode = .solo
     private var match: DuelMatch?
-    private let transport = Transport()
+    /// Whichever way we're reaching the opponent this match.
+    private var link: PeerLink = LocalLink()
     /// Lobby UI state.
     private enum Lobby { case none, hosting(String), joining }
     private var lobby: Lobby = .none
@@ -236,30 +237,34 @@ final class GameView: NSView {
             if screen == .duel { show(.main) } else { show(.main) }
         case .quit: NSApp.terminate(nil)
         case .duel: show(.duel)
-        case .hostGame: startHosting()
-        case .joinGame: startJoining()
+        case .hostGame: startHosting(online: false)
+        case .joinGame: startJoining(online: false)
+        case .hostOnline: startHosting(online: true)
+        case .joinOnline: startJoining(online: true)
         case .leaveMatch: leaveDuel(); show(.main)
         }
     }
 
     // MARK: - Duel setup
 
-    private func startHosting() {
+    private func startHosting(online: Bool) {
         mode = .duel
+        link = online ? RelayLink() : LocalLink()
         let code = LobbyCode.generate()
         lobby = .hosting(code)
         codeCopied = false
         lobbyStatus = nil
         match = DuelMatch(isHost: true)
         wireTransport()
-        transport.host(code: code)
+        link.host(code: code)
         screen = nil
         PointerCapture.shared.release()   // lobby needs a usable pointer
         needsDisplay = true
     }
 
-    private func startJoining() {
+    private func startJoining(online: Bool) {
         mode = .duel
+        link = online ? RelayLink() : LocalLink()
         lobby = .joining
         typedCode = ""
         lobbyStatus = nil
@@ -271,18 +276,18 @@ final class GameView: NSView {
     }
 
     private func wireTransport() {
-        transport.onStatusChange = { [weak self] status in
+        link.onStatusChange = { [weak self] status in
             guard let self else { return }
             switch status {
             case .connected:
                 self.lobbyStatus = nil
                 self.lobby = .none
-                self.transport.send(.hello(
+                self.link.send(.hello(
                     protocolVersion: Message.currentVersion, playerName: NSUserName()))
                 // The host owns round numbering.
                 if self.match?.isHost == true {
                     self.match?.beginRound(1)
-                    self.transport.send(.nextRound(round: 1))
+                    self.link.send(.nextRound(round: 1))
                 } else {
                     self.match?.beginRound(1)
                 }
@@ -297,7 +302,7 @@ final class GameView: NSView {
             self.needsDisplay = true
         }
 
-        transport.onMessage = { [weak self] message in
+        link.onMessage = { [weak self] message in
             self?.handle(message)
             self?.needsDisplay = true
         }
@@ -310,7 +315,7 @@ final class GameView: NSView {
             if version != Message.currentVersion {
                 lobbyStatus = "Version mismatch — both players need the same build."
                 match.disconnect("Version mismatch")
-                transport.stop()
+                link.stop()
             }
 
         case .planted(let x, let y):
@@ -322,7 +327,7 @@ final class GameView: NSView {
             guard match.isHost, match.phase == .seeking || match.phase == .roundOver else { return }
             guard match.phase == .seeking else { return }
             let scores = match.hostResolve(winnerIsHost: false)
-            transport.send(.roundResult(
+            link.send(.roundResult(
                 winnerIsHost: false,
                 hostScore: scores.hostScore, guestScore: scores.guestScore,
                 targetX: match.revealedTarget?.x ?? 0, targetY: match.revealedTarget?.y ?? 0))
@@ -340,9 +345,12 @@ final class GameView: NSView {
             match.beginRound(round)
             enterDuelPlay()
 
+        case .peerJoined, .peerLeft:
+            break        // handled by the link as a status change
+
         case .bye:
             match.disconnect("Opponent left the match")
-            transport.stop()
+            link.stop()
             PointerCapture.shared.release()
         }
     }
@@ -367,8 +375,8 @@ final class GameView: NSView {
     }
 
     private func leaveDuel() {
-        if case .connected = transport.status { transport.send(.bye) }
-        transport.stop()
+        if case .connected = link.status { link.send(.bye) }
+        link.stop()
         match = nil
         mode = .solo
         lobby = .none
@@ -511,7 +519,7 @@ final class GameView: NSView {
                     return true
                 }
                 lobbyStatus = "Searching for \(typedCode)…"
-                transport.join(code: typedCode)
+                link.join(code: typedCode)
                 return true
             }
             if let characters = event.charactersIgnoringModifiers, !command {
@@ -536,7 +544,7 @@ final class GameView: NSView {
             if (event.keyCode == 36 || event.keyCode == 76), match.isHost {
                 let next = match.round + 1
                 match.beginRound(next)
-                transport.send(.nextRound(round: next))
+                link.send(.nextRound(round: next))
                 enterDuelPlay()
                 return true
             }
@@ -604,7 +612,7 @@ final class GameView: NSView {
             }
             ripples.append(Ripple(point: finger, at: Date(), hard: true))
             Haptics.burst(count: 3, interval: 0.07, tap: .strong)
-            transport.send(.planted(x: finger.x, y: finger.y))
+            link.send(.planted(x: finger.x, y: finger.y))
             if match.canSeek { beginSeeking() }
 
         case .seeking:
@@ -617,14 +625,14 @@ final class GameView: NSView {
                 if match.isHost {
                     // I'm the arbiter and I got here first.
                     let scores = match.hostResolve(winnerIsHost: true)
-                    transport.send(.roundResult(
+                    link.send(.roundResult(
                         winnerIsHost: true,
                         hostScore: scores.hostScore, guestScore: scores.guestScore,
                         targetX: match.revealedTarget?.x ?? 0,
                         targetY: match.revealedTarget?.y ?? 0))
                     endRoundLocally()
                 } else {
-                    transport.send(.foundIt)
+                    link.send(.foundIt)
                 }
             case .miss:
                 Haptics.burst(count: 2, interval: 0.13, tap: .weak)
@@ -804,7 +812,7 @@ final class GameView: NSView {
         switch lobby {
         case .hosting(let code):
             var connected = false
-            if case .connected = transport.status { connected = true }
+            if case .connected = link.status { connected = true }
             DuelRenderer.drawHostLobby(
                 code: code, connected: connected, in: arena, copied: codeCopied)
             return
