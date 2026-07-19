@@ -60,6 +60,13 @@ final class GameView: NSView {
     /// Otherwise the first thing streamed to the opponent is a marker sitting
     /// exactly on the target you just buried — handing them the round.
     private var probesUnlocked = false
+    /// A force click stays at stage 2 for as long as you hold it, and
+    /// pressureChange keeps firing — so a single press would spend every dig
+    /// you have. Digging is edge-triggered: it fires once when the press
+    /// crosses into stage 2, and re-arms only after you let go.
+    private var deepClickActive = false
+    /// Backstop for any other repeat path (key auto-repeat, trackpad noise).
+    private var lastDigAt: Date?
 
     /// Lobby UI state.
     private enum Lobby { case none, hosting(String), joining }
@@ -499,6 +506,7 @@ final class GameView: NSView {
             pingArmed = true
             // Hand off the pad: from here it's safe to show them where I am.
             probesUnlocked = true
+            deepClickActive = false
             return
         }
 
@@ -588,7 +596,7 @@ final class GameView: NSView {
 
         switch event.keyCode {
         case 53: show(.pause)
-        case 49: dig()                       // space
+        case 49: if !event.isARepeat { dig() }        // space, no auto-repeat
         default: super.keyDown(with: event)
         }
         needsDisplay = true
@@ -644,7 +652,11 @@ final class GameView: NSView {
         switch match.phase {
         case .planting, .waitingForOpponent, .seeking:
             if event.keyCode == 53 { show(.duelPause); return true }
-            if event.keyCode == 49 { duelDig(); return true }                 // space
+            // isARepeat: holding space would otherwise machine-gun digs.
+            if event.keyCode == 49 {
+                if !event.isARepeat { duelDig() }
+                return true
+            }
             return false
         case .roundOver:
             // Only the host advances, so both machines stay on the same round.
@@ -709,16 +721,33 @@ final class GameView: NSView {
         needsDisplay = true
     }
 
-    /// Force click digs at the current finger position.
+    /// Force click digs at the current finger position — once per press.
     override func pressureChange(with event: NSEvent) {
         guard screen == nil else { return }
-        guard event.stage >= 2 else { return }
+
+        guard event.stage >= 2 else {
+            deepClickActive = false     // released: ready for the next dig
+            return
+        }
+        guard !deepClickActive else { return }   // still the same press
+        deepClickActive = true
+
         if mode == .duel { duelDig() } else { dig() }
+    }
+
+    /// Two digs can never land closer together than this, whatever the input.
+    private static let digCooldown: TimeInterval = 0.45
+
+    private var digCoolingDown: Bool {
+        guard let lastDigAt else { return false }
+        return Date().timeIntervalSince(lastDigAt) < Self.digCooldown
     }
 
     /// One control, two meanings: bury during planting, dig during seeking.
     private func duelDig() {
         guard let match, let finger else { return }
+        guard !digCoolingDown else { return }
+        lastDigAt = Date()
 
         switch match.phase {
         case .planting:
@@ -776,6 +805,8 @@ final class GameView: NSView {
 
     private func dig() {
         guard screen == nil, game.phase == .hunting, let finger else { return }
+        guard !digCoolingDown else { return }
+        lastDigAt = Date()
 
         // A dig arrived, so the pending "press harder" nudge is wrong.
         nudgeAt = nil
