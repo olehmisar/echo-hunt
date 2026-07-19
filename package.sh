@@ -8,7 +8,7 @@ MACOS="$APP/Contents/MacOS"
 DEPLOY_TARGET="12.0"
 
 rm -rf dist
-mkdir -p "$MACOS"
+mkdir -p "$MACOS" "$APP/Contents/Resources"
 
 echo "Compiling arm64…"
 swiftc -O -target "arm64-apple-macos$DEPLOY_TARGET" $(find Sources -name "*.swift") -o dist/EchoHunt-arm64
@@ -34,6 +34,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>$DEPLOY_TARGET</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSLocalNetworkUsageDescription</key><string>Echo Hunt finds your opponent's Mac on the local network to play a two-player match.</string>
   <key>NSBonjourServices</key>
@@ -42,6 +43,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # Ad-hoc signature. This is NOT a Developer ID signature, so Gatekeeper will
 # still warn on another machine — see READ-ME-FIRST.txt.
