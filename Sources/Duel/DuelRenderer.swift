@@ -171,11 +171,26 @@ enum DuelRenderer {
                   centered: true)
     }
 
-    static func drawSeekingBanner(awaitingRuling: Bool, in arena: NSRect) {
+    static func drawSeekingBanner(
+        awaitingRuling: Bool, isOut: Bool, leadIn: TimeInterval?, in arena: NSRect
+    ) {
+        if let leadIn, leadIn > 0 {
+            // Big and central: this is a "don't press yet" sign.
+            Draw.text("GET READY", at: NSPoint(x: arena.midX, y: arena.midY + 10),
+                      size: 28, color: Draw.Palette.warn, centered: true, tracking: 8)
+            Draw.text(String(format: "%.1f", leadIn),
+                      at: NSPoint(x: arena.midX, y: arena.midY - 30),
+                      size: 20, color: Draw.Palette.dim, centered: true)
+            return
+        }
         if awaitingRuling {
             Draw.text("FOUND IT — waiting for the verdict…",
                       at: NSPoint(x: arena.midX, y: arena.maxY - 44),
                       size: 15, color: Draw.Palette.good, centered: true)
+        } else if isOut {
+            Draw.text("OUT OF DIGS — the round is theirs unless they miss twice too",
+                      at: NSPoint(x: arena.midX, y: arena.maxY - 44),
+                      size: 13, color: Draw.Palette.bad, centered: true)
         } else {
             Draw.text("FIND THEIRS FIRST", at: NSPoint(x: arena.midX, y: arena.maxY - 40),
                       size: 13, color: Draw.Palette.faint, centered: true, tracking: 3)
@@ -188,12 +203,13 @@ enum DuelRenderer {
         NSColor(calibratedWhite: 0.05, alpha: 0.8).setFill()
         arena.fill()
 
+        let drawn = match.lastRoundWasDraw
         let won = match.lastRoundWonByMe ?? false
         let matchOver = match.phase == .matchOver
 
         if let target = match.revealedTarget {
             let center = Draw.point(target, in: arena)
-            (won ? Draw.Palette.good : Draw.Palette.bad).setFill()
+            (drawn ? Draw.Palette.warn : (won ? Draw.Palette.good : Draw.Palette.bad)).setFill()
             NSBezierPath(ovalIn: NSRect(
                 x: center.x - 9, y: center.y - 9, width: 18, height: 18)).fill()
         }
@@ -202,19 +218,22 @@ enum DuelRenderer {
         let headline: String
         if matchOver {
             headline = won ? "YOU WIN THE MATCH" : "YOU LOSE THE MATCH"
+        } else if drawn {
+            headline = "NOBODY FOUND IT"
         } else {
             headline = won ? "ROUND WON" : "ROUND LOST"
         }
         Draw.text(headline, at: NSPoint(x: arena.midX, y: y), size: 26,
-                  color: won ? Draw.Palette.good : Draw.Palette.bad,
+                  color: drawn ? Draw.Palette.warn : (won ? Draw.Palette.good : Draw.Palette.bad),
                   centered: true, tracking: 5)
         y -= 44
         Draw.text("\(match.myScore) — \(match.opponentScore)",
                   at: NSPoint(x: arena.midX, y: y), size: 30,
                   color: Draw.Palette.bright, centered: true, tracking: 4)
         y -= 46
-        Draw.text(won ? "they were hunting yours all along"
-                      : "that's where they buried it",
+        Draw.text(drawn ? "you both ran out of digs"
+                        : (won ? "they were hunting yours all along"
+                               : "that's where they buried it"),
                   at: NSPoint(x: arena.midX, y: y), size: 12,
                   color: Draw.Palette.dim, centered: true)
         y -= 40
@@ -259,8 +278,12 @@ enum DuelRenderer {
     /// Always-visible match state during play.
     static func drawHUD(match: DuelMatch, in bounds: NSRect) {
         let role = match.isHost ? "HOST" : "GUEST"
-        let hud = "ROUND \(match.round)     YOU \(match.myScore) — \(match.opponentScore) THEM"
-            + "     FIRST TO \(DuelMatch.winsNeeded)     \(role)"
+        var hud = "ROUND \(match.round)     YOU \(match.myScore) — \(match.opponentScore) THEM"
+            + "     FIRST TO \(DuelMatch.winsNeeded)"
+        if match.phase == .seeking {
+            hud += "     DIGS \(match.digsRemaining)/\(DuelMatch.digsPerRound)"
+        }
+        hud += "     \(role)"
         Draw.text(hud, at: NSPoint(x: bounds.midX, y: 62), size: 11,
                   color: Draw.Palette.faint, centered: true)
     }

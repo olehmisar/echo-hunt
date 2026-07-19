@@ -25,8 +25,11 @@ enum Message: Codable {
     /// Guest claiming a find. The host arbitrates.
     case foundIt
 
+    /// "I've burned both my digs." The host folds this into its ruling.
+    case outOfDigs
+
     /// Host's ruling on the round, plus the authoritative running score.
-    case roundResult(winnerIsHost: Bool, hostScore: Int, guestScore: Int, targetX: Double, targetY: Double)
+    case roundResult(winner: RoundWinner, hostScore: Int, guestScore: Int, targetX: Double, targetY: Double)
 
     /// Host starting the next round; both sides return to planting.
     case nextRound(round: Int)

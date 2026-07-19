@@ -17,7 +17,17 @@ enum DuelPhase: Equatable {
 
 enum DuelDig {
     case found
-    case miss
+    case miss(remaining: Int)
+    /// That was the last dig — this player is out for the round.
+    case eliminated
+}
+
+/// A round can end without a find: if both players burn their digs, nobody
+/// takes it.
+enum RoundWinner: String, Codable {
+    case host
+    case guest
+    case draw
 }
 
 /// The duel rules, with no networking and no UI so they can be tested directly.
@@ -42,7 +52,15 @@ final class DuelMatch {
     /// Wrong digs this round — drawn, but they cost nothing except the time
     /// that lets your opponent win the race.
     private(set) var misses: [Point] = []
+    /// nil while the round is undecided *or* when it was drawn — check
+    /// `lastRoundWasDraw` to tell those apart.
     private(set) var lastRoundWonByMe: Bool?
+    private(set) var lastRoundWasDraw = false
+
+    /// Digs are scarce: miss twice and you've lost the round.
+    private(set) var digsUsed = 0
+    /// Set when the opponent reports they've burned theirs.
+    private(set) var opponentOut = false
     /// Revealed once the round is decided.
     private(set) var revealedTarget: Point?
 
@@ -50,6 +68,7 @@ final class DuelMatch {
     private(set) var awaitingRuling = false
 
     static let winsNeeded = 3
+    static let digsPerRound = 2
 
     init(isHost: Bool) {
         self.isHost = isHost
@@ -64,6 +83,9 @@ final class DuelMatch {
         misses = []
         revealedTarget = nil
         lastRoundWonByMe = nil
+        lastRoundWasDraw = false
+        digsUsed = 0
+        opponentOut = false
         awaitingRuling = false
         phase = .planting
     }
@@ -96,14 +118,36 @@ final class DuelMatch {
         return point.distance(to: opponentTarget)
     }
 
+    var digsRemaining: Int { max(0, Self.digsPerRound - digsUsed) }
+    /// Out of digs: still watching, but can no longer win the round.
+    var isOut: Bool { digsRemaining == 0 }
+
     func dig(at point: Point) -> DuelDig? {
-        guard canSeek, let opponentTarget, !awaitingRuling else { return nil }
+        guard canSeek, let opponentTarget, !awaitingRuling, !isOut else { return nil }
         if point.distance(to: opponentTarget) <= Sonar.digRadius {
             awaitingRuling = true
             return .found
         }
         misses.append(point)
-        return .miss
+        digsUsed += 1
+        return isOut ? .eliminated : .miss(remaining: digsRemaining)
+    }
+
+    func markOpponentOut() {
+        opponentOut = true
+    }
+
+    /// Host-side: does running out of digs decide the round yet? Losing your
+    /// last dig hands the round to the opponent — unless they're out too, in
+    /// which case nobody takes it.
+    func eliminationVerdict() -> RoundWinner? {
+        guard isHost, phase == .seeking else { return nil }
+        switch (isOut, opponentOut) {
+        case (true, true): return .draw
+        case (true, false): return .guest
+        case (false, true): return .host
+        case (false, false): return nil
+        }
     }
 
     // MARK: - Resolution
@@ -114,23 +158,29 @@ final class DuelMatch {
     // two machines could each believe they'd won.
 
     /// Host-side ruling. Returns the scores to broadcast.
-    func hostResolve(winnerIsHost: Bool) -> (hostScore: Int, guestScore: Int) {
+    func hostResolve(winner: RoundWinner) -> (hostScore: Int, guestScore: Int) {
         guard isHost else { return (myScore, opponentScore) }
-        if winnerIsHost { myScore += 1 } else { opponentScore += 1 }
-        applyOutcome(iWon: winnerIsHost)
+        switch winner {
+        case .host: myScore += 1
+        case .guest: opponentScore += 1
+        case .draw: break          // a drawn round is worth nothing to anyone
+        }
+        applyOutcome(winner == .draw ? nil : winner == .host, drawn: winner == .draw)
         return (myScore, opponentScore)
     }
 
     /// Guest-side: adopt the host's ruling verbatim.
-    func applyRuling(winnerIsHost: Bool, hostScore: Int, guestScore: Int, target: Point) {
+    func applyRuling(winner: RoundWinner, hostScore: Int, guestScore: Int, target: Point) {
         myScore = isHost ? hostScore : guestScore
         opponentScore = isHost ? guestScore : hostScore
         opponentTarget = target
-        applyOutcome(iWon: isHost == winnerIsHost)
+        let iWon: Bool? = winner == .draw ? nil : ((winner == .host) == isHost)
+        applyOutcome(iWon, drawn: winner == .draw)
     }
 
-    private func applyOutcome(iWon: Bool) {
+    private func applyOutcome(_ iWon: Bool?, drawn: Bool) {
         lastRoundWonByMe = iWon
+        lastRoundWasDraw = drawn
         revealedTarget = opponentTarget
         awaitingRuling = false
         phase = (myScore >= Self.winsNeeded || opponentScore >= Self.winsNeeded)
