@@ -7,7 +7,7 @@ APP="build/EchoHunt.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 
-swiftc -O Sources/*.swift -o "$APP/Contents/MacOS/EchoHunt"
+swiftc -O $(find Sources -name "*.swift") -o "$APP/Contents/MacOS/EchoHunt"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -21,6 +21,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSLocalNetworkUsageDescription</key><string>Echo Hunt finds your opponent's Mac on the local network to play a two-player match.</string>
+  <key>NSBonjourServices</key>
+  <array><string>_echohunt._tcp</string></array>
 </dict>
 </plist>
 PLIST

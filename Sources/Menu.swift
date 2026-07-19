@@ -6,6 +6,10 @@ enum Screen {
     case help
     case pause
     case over
+    /// Host or join.
+    case duel
+    /// Pause during a duel — no "restart", since a round belongs to both players.
+    case duelPause
 }
 
 struct MenuItem {
@@ -21,6 +25,10 @@ enum MenuAction {
     case help
     case back
     case quit
+    case duel
+    case hostGame
+    case joinGame
+    case leaveMatch
 }
 
 extension Screen {
@@ -30,6 +38,8 @@ extension Screen {
         case .help: return "HOW TO PLAY"
         case .pause: return "PAUSED"
         case .over: return "TIME"
+        case .duel: return "TWO PLAYERS"
+        case .duelPause: return "PAUSED"
         }
     }
 
@@ -37,12 +47,24 @@ extension Screen {
         switch self {
         case .main:
             return [
-                MenuItem(title: "Play", action: .play),
+                MenuItem(title: "Solo", action: .play),
+                MenuItem(title: "Two Players", action: .duel),
                 MenuItem(title: "How to Play", action: .help),
                 MenuItem(title: "Quit", action: .quit),
             ]
         case .help:
             return [MenuItem(title: "Back", action: .back)]
+        case .duel:
+            return [
+                MenuItem(title: "Host a Game", action: .hostGame),
+                MenuItem(title: "Join with a Code", action: .joinGame),
+                MenuItem(title: "Back", action: .back),
+            ]
+        case .duelPause:
+            return [
+                MenuItem(title: "Resume", action: .resume),
+                MenuItem(title: "Leave Match", action: .leaveMatch),
+            ]
         // Quit lives only on the main menu — leaving the game shouldn't be one
         // stray keystroke away mid-round.
         case .pause:
@@ -81,9 +103,15 @@ extension Screen {
                 "Wrong digs stay on the board and cost you points.",
                 "Five rounds. Decoys accumulate as you go.",
             ]
-        case .pause:
-            return []
-        case .over:
+        case .duel:
+            return [
+                "Each of you hides a target on your own trackpad.",
+                "Then you both race to find the other's.",
+                "You cannot start seeking until you've hidden yours.",
+                "",
+                "Both Macs must be on the same Wi-Fi.",
+            ]
+        case .pause, .over, .duelPause:
             return []
         }
     }
