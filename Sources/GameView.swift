@@ -581,9 +581,11 @@ final class GameView: NSView {
         if let screen {
             let items = screen.items
             switch event.keyCode {
-            case 126: selection = (selection - 1 + items.count) % items.count   // up
-            case 125: selection = (selection + 1) % items.count                 // down
-            case 36, 76: activate(items[selection].action)                      // return
+            case 126: moveSelection(to: (selection - 1 + items.count) % items.count)   // up
+            case 125: moveSelection(to: (selection + 1) % items.count)                 // down
+            case 36, 76:                                                        // return
+                Haptics.tap(.strong)                       // commit feels heavier than a move
+                activate(items[selection].action)
             case 53:                                                            // esc
                 switch screen {
                 case .pause: resumePlay()
@@ -616,6 +618,7 @@ final class GameView: NSView {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(code, forType: .string)
                 codeCopied = true
+                Haptics.tap(.strong)                       // confirm the copy by feel
                 return true
             }
             return true   // swallow everything else while in the lobby
@@ -624,24 +627,33 @@ final class GameView: NSView {
             if event.keyCode == 53 { leaveDuel(); show(.duel); return true }
             if command, event.charactersIgnoringModifiers?.lowercased() == "v" {
                 let pasted = NSPasteboard.general.string(forType: .string) ?? ""
-                typedCode = LobbyCode.normalize(pasted)
+                let filled = LobbyCode.normalize(pasted)
+                if filled != typedCode { Haptics.tap(.strong) }
+                typedCode = filled
                 return true
             }
             if event.keyCode == 51 {                                          // delete
-                if !typedCode.isEmpty { typedCode.removeLast() }
+                if !typedCode.isEmpty { typedCode.removeLast(); Haptics.tap(.weak) }
                 return true
             }
             if event.keyCode == 36 || event.keyCode == 76 {                   // return
                 guard LobbyCode.isComplete(typedCode) else {
                     lobbyStatus = "Enter all \(LobbyCode.length) characters."
+                    Haptics.tap(.weak)                     // a small "not yet" bump
                     return true
                 }
+                Haptics.tap(.strong)
                 lobbyStatus = "Searching for \(typedCode)…"
                 link.join(code: typedCode)
                 return true
             }
             if let characters = event.charactersIgnoringModifiers, !command {
                 let filtered = LobbyCode.normalize(typedCode + characters)
+                if filtered.count != typedCode.count {     // an actual character landed
+                    Haptics.tap(.weak)
+                    // A satisfying stronger tap on the final slot.
+                    if LobbyCode.isComplete(filtered) { Haptics.tap(.strong) }
+                }
                 typedCode = filtered
             }
             return true
@@ -695,12 +707,20 @@ final class GameView: NSView {
         }
     }
 
+    /// One place that changes the highlighted item, so a tap fires on every
+    /// real move — keyboard or mouse — and never on a no-op.
+    private func moveSelection(to index: Int) {
+        guard index != selection else { return }
+        selection = index
+        Haptics.tap(.weak)          // a light detent, like a scroll wheel notch
+        needsDisplay = true
+    }
+
     override func mouseMoved(with event: NSEvent) {
         guard screen != nil else { return }
         let point = convert(event.locationInWindow, from: nil)
-        if let index = itemRects.firstIndex(where: { $0.contains(point) }), index != selection {
-            selection = index
-            needsDisplay = true
+        if let index = itemRects.firstIndex(where: { $0.contains(point) }) {
+            moveSelection(to: index)
         }
     }
 
