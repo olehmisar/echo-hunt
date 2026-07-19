@@ -69,6 +69,9 @@ final class GameView: NSView {
     /// While set and in the future, my sonar is scrambled to noise.
     private var jammedUntil: Date?
     private var nextJamNoiseAt: Date?
+    /// Seconds of drift elapsed when the round ended, so the reveal can replay
+    /// the exact path the hunted target travelled.
+    private var revealElapsed: TimeInterval?
 
     private static let jamDuration: TimeInterval = 3.0
     /// Probes stay locked until the player lifts the finger they planted with.
@@ -208,7 +211,9 @@ final class GameView: NSView {
     /// Push each target's current drifted position into the match, so digging,
     /// sonar and the reveal all read a moving point without knowing it moves.
     private func driftTargets(_ now: Date) {
-        guard let match, match.phase == .seeking else { return }
+        // Once the outcome is frozen (a find, or round end), stop moving so the
+        // reveal marker and its trajectory agree on where it stopped.
+        guard let match, match.phase == .seeking, revealElapsed == nil else { return }
         // Motion starts when seeking arms; frozen at the centre before that.
         let elapsed = seekArmed ? max(0, now.timeIntervalSince(seekArmedAt ?? now)) : 0
         match.moveTargets(
@@ -490,6 +495,7 @@ final class GameView: NSView {
         nextPulseAt = .distantFuture
         myPath = nil
         theirPath = nil
+        revealElapsed = nil
         jammedUntil = nil            // a jam doesn't carry into the next round
         duelFadeFrom = Date()        // fade the new round up from black (touch 6)
         PointerCapture.shared.capture()
@@ -582,6 +588,12 @@ final class GameView: NSView {
 
     private func endRoundLocally() {
         nextPulseAt = .distantFuture
+        // Freeze how far the target had drifted, before we drop the seek clock,
+        // so the reveal can redraw its whole path. A find already froze it at
+        // the dig moment; don't overwrite that with the (later) round-end time.
+        if revealElapsed == nil {
+            revealElapsed = seekArmedAt.map { max(0, Date().timeIntervalSince($0)) } ?? 0
+        }
         seekArmedAt = nil
         lastCountdownSecond = -1
         // A win and a loss should not feel the same. Losing the race — the
@@ -919,6 +931,10 @@ final class GameView: NSView {
             case .found:
                 Haptics.play(.found)     // immediate ack; .win follows at round end
                 nextPulseAt = .distantFuture
+                // Freeze the drift at the moment of the find, so the reveal
+                // marks where you actually dug — even for a guest waiting on
+                // the host's ruling over the network.
+                revealElapsed = seekArmedAt.map { max(0, Date().timeIntervalSince($0)) } ?? 0
                 if match.isHost {
                     hostConclude(.host)          // I'm the arbiter and I got here first
                 } else {
@@ -1160,7 +1176,8 @@ final class GameView: NSView {
         case .roundOver, .matchOver:
             drawDuelMisses(match: match, in: arena)
             DuelRenderer.drawRoundOver(
-                match: match, rematchRequested: rematchRequested, in: arena)
+                match: match, rematchRequested: rematchRequested,
+                trajectory: revealTrajectory(), in: arena)
 
         case .disconnected(let reason):
             DuelRenderer.drawDisconnected(reason: reason, in: arena)
@@ -1201,6 +1218,17 @@ final class GameView: NSView {
         Draw.text(String(format: "%.1f", remaining),
                   at: NSPoint(x: arena.midX, y: arena.midY - 24),
                   size: 15, color: Draw.Palette.dim, centered: true)
+    }
+
+    /// The path the target this player hunted travelled, sampled from where it
+    /// was buried to where it was when the round ended. Empty if it barely
+    /// moved, so a near-instant round doesn't draw a pointless dot.
+    private func revealTrajectory() -> [Point] {
+        guard let theirPath, let revealElapsed, revealElapsed > 0.15 else { return [] }
+        let steps = 64
+        return (0...steps).map {
+            theirPath.position(at: revealElapsed * Double($0) / Double(steps))
+        }
     }
 
     private func drawDuelMisses(match: DuelMatch, in arena: NSRect) {
