@@ -56,6 +56,12 @@ final class GameView: NSView {
     /// still pressing hard when the round flips, and without a beat they'd
     /// burn a dig on the spot where they buried their own target.
     private var seekArmedAt: Date?
+    /// Last whole second announced during the lead-in, so each 3-2-1 tick fires
+    /// exactly once. -1 means "no countdown running".
+    private var lastCountdownSecond = -1
+    /// A new round fades up from black over this window, so the previous
+    /// result gets a beat to land instead of a hard cut (touch 6).
+    private var duelFadeFrom: Date?
     /// Probes stay locked until the player lifts the finger they planted with.
     /// Otherwise the first thing streamed to the opponent is a marker sitting
     /// exactly on the target you just buried — handing them the round.
@@ -168,13 +174,44 @@ final class GameView: NSView {
     /// Duel sonar. The opponent's target is already on this machine, so this is
     /// computed entirely locally — the network is never in the haptic path.
     private func stepDuel(_ now: Date) {
+        tickCountdown(now)
+
         guard let match, match.canSeek, seekArmed, fingerCount == 1, let finger,
               now >= nextPulseAt, !match.awaitingRuling, !match.isOut
         else { return }
 
         guard let distance = match.distance(from: finger) else { return }
-        Haptics.tap(Sonar.strength(distance: distance))
+        emitReturn(Sonar.returnTexture(distance: distance))
         nextPulseAt = now.addingTimeInterval(Sonar.pulseInterval(distance: distance))
+    }
+
+    /// A single sonar return, textured by proximity (touch 2).
+    private func emitReturn(_ texture: Sonar.Return) {
+        switch texture {
+        case .faint: Haptics.tap(.weak)
+        case .solid: Haptics.tap(.strong)
+        case .hot:
+            // Doubled, tight together, so the last stretch has its own feel.
+            Haptics.tap(.strong)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { Haptics.tap(.strong) }
+        }
+    }
+
+    /// Tap on each second of the lead-in (touch 7): a physical 3-2-1, then a
+    /// firmer "go" the instant seeking arms.
+    private func tickCountdown(_ now: Date) {
+        guard let seekArmedAt else { return }
+        let remaining = seekArmedAt.timeIntervalSince(now)
+        if remaining > 0 {
+            let secondsLeft = Int(ceil(remaining))
+            if secondsLeft != lastCountdownSecond {
+                lastCountdownSecond = secondsLeft
+                Haptics.play(.countdown)
+            }
+        } else if lastCountdownSecond != 0 {
+            lastCountdownSecond = 0
+            Haptics.play(.go)
+        }
     }
 
     /// One sonar return. Near a decoy the single tick becomes a stutter — a
@@ -410,7 +447,23 @@ final class GameView: NSView {
         trail.removeAll()
         ripples.removeAll()
         nextPulseAt = .distantFuture
+        duelFadeFrom = Date()        // fade the new round up from black (touch 6)
         PointerCapture.shared.capture()
+    }
+
+    private static let duelFadeDuration: TimeInterval = 0.45
+
+    /// Black overlay that fades to clear at the start of a round.
+    private func drawDuelFade(in bounds: NSRect) {
+        guard let duelFadeFrom else { return }
+        let elapsed = Date().timeIntervalSince(duelFadeFrom)
+        guard elapsed < Self.duelFadeDuration else {
+            self.duelFadeFrom = nil
+            return
+        }
+        let alpha = 1 - elapsed / Self.duelFadeDuration
+        NSColor(calibratedWhite: 0.04, alpha: alpha).setFill()
+        bounds.fill()
     }
 
     /// Stream my finger to the opponent so they can watch me hunt. Throttled
@@ -462,6 +515,7 @@ final class GameView: NSView {
     private func beginSeeking() {
         let armed = Date().addingTimeInterval(Self.roundLeadIn)
         seekArmedAt = armed
+        lastCountdownSecond = -1     // re-arm the 3-2-1 ticks for this round
         nextPulseAt = armed          // no sonar during the lead-in either
         needsDisplay = true
     }
@@ -484,7 +538,19 @@ final class GameView: NSView {
 
     private func endRoundLocally() {
         nextPulseAt = .distantFuture
-        Haptics.burst(count: 4, interval: 0.06, tap: .strong)
+        seekArmedAt = nil
+        lastCountdownSecond = -1
+        // A win and a loss should not feel the same. Losing the race — the
+        // opponent found yours first — gets its own heavy, sinking jolt,
+        // distinct from the flurry of your own find (touch 4).
+        guard let match else { return }
+        if match.lastRoundWasDraw {
+            Haptics.burst(count: 3, interval: 0.1, tap: .weak)
+        } else if match.lastRoundWonByMe == true {
+            Haptics.play(.win)
+        } else {
+            Haptics.play(.lose)
+        }
     }
 
     private func leaveDuel() {
@@ -781,7 +847,7 @@ final class GameView: NSView {
                 return
             }
             ripples.append(Ripple(point: finger, at: Date(), hard: true))
-            Haptics.burst(count: 3, interval: 0.07, tap: .strong)
+            Haptics.play(.plant)         // weighty, committed (touch 1)
             link.send(.planted(x: finger.x, y: finger.y))
             if match.canSeek { beginSeeking() }
 
@@ -795,7 +861,7 @@ final class GameView: NSView {
             ripples.append(Ripple(point: finger, at: Date(), hard: true))
             switch match.dig(at: finger) {
             case .found:
-                Haptics.burst(count: 6, interval: 0.05, tap: .strong)
+                Haptics.play(.found)     // immediate ack; .win follows at round end
                 nextPulseAt = .distantFuture
                 if match.isHost {
                     hostConclude(.host)          // I'm the arbiter and I got here first
@@ -1054,6 +1120,9 @@ final class GameView: NSView {
                       at: NSPoint(x: bounds.midX, y: 38), size: 11,
                       color: Draw.Palette.faint, centered: true, tracking: 2)
         }
+
+        // Over everything, so the round fades up as a whole.
+        drawDuelFade(in: bounds)
     }
 
     private func drawDuelMisses(match: DuelMatch, in arena: NSRect) {

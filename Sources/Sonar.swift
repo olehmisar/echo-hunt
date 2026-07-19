@@ -21,6 +21,24 @@ enum Sonar {
         distance < 0.22 ? .strong : .weak
     }
 
+    /// The *texture* of a single sonar return, not just its rate. Far away it's
+    /// a faint tick; closing in it firms to a solid thump; and in the last
+    /// stretch — right where the rate differences get too small to feel — it
+    /// doubles into a distinct "you're on top of it" buzz. This gives the
+    /// endgame its own sensation instead of merely a faster version of the
+    /// same one.
+    enum Return {
+        case faint       // single weak tick
+        case solid       // single strong thump
+        case hot         // strong double — you're within a whisker
+    }
+
+    static func returnTexture(distance: Double) -> Return {
+        if distance < 0.09 { return .hot }
+        if distance < 0.22 { return .solid }
+        return .faint
+    }
+
     /// Two-finger ping: the echo returns after a delay proportional to distance.
     static func echoDelay(distance: Double) -> TimeInterval {
         0.12 + distance * 1.5
