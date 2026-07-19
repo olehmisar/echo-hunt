@@ -381,6 +381,12 @@ final class GameView: NSView {
             enterDuelPlay()
 
         case .probe(let x, let y):
+            // Drop anything that arrives during the lead-in rather than
+            // buffering it: that window is exactly when their finger is still
+            // resting on the target they just buried. Suppressing our own
+            // sending isn't enough — an older or modified client would still
+            // broadcast, so the receiver refuses to look.
+            guard seekArmed else { return }
             opponentFinger = Point(x: x, y: y)
             opponentFingerAt = Date()
 
@@ -997,7 +1003,8 @@ final class GameView: NSView {
         case .seeking:
             DuelRenderer.drawStandoff(
                 myTarget: match.myTarget,
-                opponentFinger: opponentFinger,
+                // Never draw them during the lead-in, whatever arrived.
+                opponentFinger: seekArmed ? opponentFinger : nil,
                 opponentAge: opponentFingerAt.map { Date().timeIntervalSince($0) },
                 in: arena)
             drawRipples(in: arena)
