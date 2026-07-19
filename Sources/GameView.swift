@@ -50,6 +50,8 @@ final class GameView: NSView {
     private var opponentFinger: Point?
     private var opponentFingerAt: Date?
     private var lastProbeSent: (point: Point, at: Date)?
+    /// Guest has asked for a rematch and is waiting on the host.
+    private var rematchRequested = false
 
     /// Lobby UI state.
     private enum Lobby { case none, hosting(String), joining }
@@ -247,6 +249,7 @@ final class GameView: NSView {
         case .joinGame: startJoining(online: false)
         case .hostOnline: startHosting(online: true)
         case .joinOnline: startJoining(online: true)
+        case .restartMatch: requestRematch()
         case .leaveMatch: leaveDuel(); show(.main)
         }
     }
@@ -351,6 +354,18 @@ final class GameView: NSView {
             match.beginRound(round)
             enterDuelPlay()
 
+        case .rematchRequest:
+            // Only the host can start one; a guest's request is advisory.
+            guard match.isHost else { return }
+            startRematch()
+
+        case .restartMatch(let round):
+            guard !match.isHost else { return }
+            match.restartMatch()
+            match.beginRound(round)
+            rematchRequested = false
+            enterDuelPlay()
+
         case .probe(let x, let y):
             opponentFinger = Point(x: x, y: y)
             opponentFingerAt = Date()
@@ -371,6 +386,7 @@ final class GameView: NSView {
         opponentFinger = nil
         opponentFingerAt = nil
         lastProbeSent = nil
+        rematchRequested = false
         trail.removeAll()
         ripples.removeAll()
         nextPulseAt = .distantFuture
@@ -393,6 +409,30 @@ final class GameView: NSView {
         }
         lastProbeSent = (point, now)
         link.send(.probe(x: point.x, y: point.y))
+    }
+
+    /// Either player can ask; only the host acts. Works mid-match from the
+    /// pause menu as well as after a match ends.
+    private func requestRematch() {
+        guard let match else { return }
+        if match.isHost {
+            startRematch()
+        } else {
+            rematchRequested = true
+            link.send(.rematchRequest)
+            screen = nil
+            PointerCapture.shared.capture()
+            needsDisplay = true
+        }
+    }
+
+    private func startRematch() {
+        guard let match, match.isHost else { return }
+        match.restartMatch()
+        match.beginRound(1)
+        rematchRequested = false
+        link.send(.restartMatch(round: 1))
+        enterDuelPlay()
     }
 
     private func beginSeeking() {
@@ -582,7 +622,18 @@ final class GameView: NSView {
             }
             if event.keyCode == 53 { show(.duelPause); return true }
             return true
-        case .matchOver, .disconnected:
+        case .matchOver:
+            if event.keyCode == 36 || event.keyCode == 76 {      // return
+                requestRematch()
+                return true
+            }
+            if event.keyCode == 53 {                              // esc
+                leaveDuel()
+                show(.main)
+                return true
+            }
+            return true
+        case .disconnected:
             if event.keyCode == 53 || event.keyCode == 36 {
                 leaveDuel()
                 show(.main)
@@ -880,7 +931,8 @@ final class GameView: NSView {
 
         case .roundOver, .matchOver:
             drawDuelMisses(match: match, in: arena)
-            DuelRenderer.drawRoundOver(match: match, in: arena)
+            DuelRenderer.drawRoundOver(
+                match: match, rematchRequested: rematchRequested, in: arena)
 
         case .disconnected(let reason):
             DuelRenderer.drawDisconnected(reason: reason, in: arena)
