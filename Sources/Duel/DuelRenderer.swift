@@ -227,11 +227,40 @@ enum DuelRenderer {
         let won = match.lastRoundWonByMe ?? false
         let matchOver = match.phase == .matchOver
 
+        // The target this player was hunting — the one thing a loser most
+        // wants to see. Ringed and labelled rather than left as a bare dot,
+        // and with a line from their last dig so "how close was I" is
+        // answerable at a glance.
         if let target = match.revealedTarget {
             let center = Draw.point(target, in: arena)
-            (drawn ? Draw.Palette.warn : (won ? Draw.Palette.good : Draw.Palette.bad)).setFill()
+            let color = drawn ? Draw.Palette.warn : (won ? Draw.Palette.good : Draw.Palette.bad)
+
+            if let lastMiss = match.misses.last {
+                let from = Draw.point(lastMiss, in: arena)
+                let line = NSBezierPath()
+                line.move(to: from)
+                line.line(to: center)
+                line.lineWidth = 1
+                line.setLineDash([4, 4], count: 2, phase: 0)
+                color.withAlphaComponent(0.45).setStroke()
+                line.stroke()
+            }
+
+            color.withAlphaComponent(0.18).setFill()
+            NSBezierPath(ovalIn: NSRect(
+                x: center.x - 26, y: center.y - 26, width: 52, height: 52)).fill()
+            color.withAlphaComponent(0.7).setStroke()
+            let halo = NSBezierPath(ovalIn: NSRect(
+                x: center.x - 18, y: center.y - 18, width: 36, height: 36))
+            halo.lineWidth = 2
+            halo.stroke()
+            color.setFill()
             NSBezierPath(ovalIn: NSRect(
                 x: center.x - 9, y: center.y - 9, width: 18, height: 18)).fill()
+
+            Draw.text(won ? "you found it" : "it was here",
+                      at: NSPoint(x: center.x, y: center.y + 32),
+                      size: 11, color: color, centered: true)
         }
 
         var y = arena.midY + 40
@@ -251,7 +280,7 @@ enum DuelRenderer {
                   at: NSPoint(x: arena.midX, y: y), size: 30,
                   color: Draw.Palette.bright, centered: true, tracking: 4)
         y -= 46
-        Draw.text(drawn ? "you both ran out of digs"
+        Draw.text(drawn ? "you both ran out of digs — nobody scores"
                         : (won ? "they were hunting yours all along"
                                : "that's where they buried it"),
                   at: NSPoint(x: arena.midX, y: y), size: 12,

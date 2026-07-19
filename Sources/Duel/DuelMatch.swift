@@ -170,10 +170,14 @@ final class DuelMatch {
     }
 
     /// Guest-side: adopt the host's ruling verbatim.
-    func applyRuling(winner: RoundWinner, hostScore: Int, guestScore: Int, target: Point) {
+    ///
+    /// Note it does *not* take a target. The reveal always shows the target
+    /// this player was hunting, which is already held locally — the two
+    /// players are hunting different points, so accepting one over the wire
+    /// showed the loser their own hiding place instead of the one they missed.
+    func applyRuling(winner: RoundWinner, hostScore: Int, guestScore: Int) {
         myScore = isHost ? hostScore : guestScore
         opponentScore = isHost ? guestScore : hostScore
-        opponentTarget = target
         let iWon: Bool? = winner == .draw ? nil : ((winner == .host) == isHost)
         applyOutcome(iWon, drawn: winner == .draw)
     }

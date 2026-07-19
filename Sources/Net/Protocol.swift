@@ -29,7 +29,11 @@ enum Message: Codable {
     case outOfDigs
 
     /// Host's ruling on the round, plus the authoritative running score.
-    case roundResult(winner: RoundWinner, hostScore: Int, guestScore: Int, targetX: Double, targetY: Double)
+    ///
+    /// Deliberately carries no coordinates. Each machine already holds the
+    /// target it was hunting, and they are *different* targets — shipping one
+    /// across only invites the receiver to reveal the wrong point.
+    case roundResult(winner: RoundWinner, hostScore: Int, guestScore: Int)
 
     /// Host starting the next round; both sides return to planting.
     case nextRound(round: Int)

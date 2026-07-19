@@ -356,11 +356,10 @@ final class GameView: NSView {
             match.markOpponentOut()
             if let verdict = match.eliminationVerdict() { hostConclude(verdict) }
 
-        case .roundResult(let winner, let hostScore, let guestScore, let x, let y):
+        case .roundResult(let winner, let hostScore, let guestScore):
             guard !match.isHost else { return }
             match.applyRuling(
-                winner: winner, hostScore: hostScore,
-                guestScore: guestScore, target: Point(x: x, y: y))
+                winner: winner, hostScore: hostScore, guestScore: guestScore)
             endRoundLocally()
 
         case .nextRound(let round):
@@ -479,9 +478,7 @@ final class GameView: NSView {
         let scores = match.hostResolve(winner: winner)
         link.send(.roundResult(
             winner: winner,
-            hostScore: scores.hostScore, guestScore: scores.guestScore,
-            targetX: match.revealedTarget?.x ?? 0,
-            targetY: match.revealedTarget?.y ?? 0))
+            hostScore: scores.hostScore, guestScore: scores.guestScore))
         endRoundLocally()
     }
 
