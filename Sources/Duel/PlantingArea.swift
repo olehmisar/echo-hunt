@@ -9,7 +9,7 @@ import Foundation
 /// rounding the corners removes the four spots everyone would otherwise pick.
 enum PlantingArea {
     /// Inset from each edge, in normalized units.
-    static let padding = 0.042
+    static let padding = 0.017
 
     /// Corner radius along x. The y radius is scaled by the arena's aspect so
     /// the corners read as circular on screen rather than as ellipses.
