@@ -28,6 +28,8 @@ enum MenuAction {
     case duel
     case hostGame
     case joinGame
+    case hostOnline
+    case joinOnline
     case leaveMatch
 }
 
@@ -56,8 +58,10 @@ extension Screen {
             return [MenuItem(title: "Back", action: .back)]
         case .duel:
             return [
-                MenuItem(title: "Host a Game", action: .hostGame),
-                MenuItem(title: "Join with a Code", action: .joinGame),
+                MenuItem(title: "Host Online", action: .hostOnline),
+                MenuItem(title: "Join Online", action: .joinOnline),
+                MenuItem(title: "Host on Local Wi-Fi", action: .hostGame),
+                MenuItem(title: "Join on Local Wi-Fi", action: .joinGame),
                 MenuItem(title: "Back", action: .back),
             ]
         case .duelPause:
@@ -109,7 +113,8 @@ extension Screen {
                 "Then you both race to find the other's.",
                 "You cannot start seeking until you've hidden yours.",
                 "",
-                "Both Macs must be on the same Wi-Fi.",
+                "Online plays anywhere. Local Wi-Fi needs no internet,",
+                "but both Macs must be on the same network.",
             ]
         case .pause, .over, .duelPause:
             return []
