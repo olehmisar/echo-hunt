@@ -12,6 +12,10 @@ enum Message: Codable {
     /// desyncing in some subtler way later.
     case hello(protocolVersion: Int, playerName: String)
 
+    /// The host's settings, applied to the whole match so both machines agree
+    /// on the rules. Sent on connect and again on a rematch.
+    case matchConfig(movingTarget: Bool)
+
     /// "My target is buried, here it is." Sent once per round. The receiver
     /// hunts this point.
     case planted(x: Double, y: Double)

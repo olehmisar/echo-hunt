@@ -10,6 +10,7 @@ enum Screen {
     case duel
     /// Pause during a duel — no "restart", since a round belongs to both players.
     case duelPause
+    case settings
 }
 
 struct MenuItem {
@@ -32,6 +33,8 @@ enum MenuAction {
     case joinOnline
     case restartMatch
     case leaveMatch
+    case settings
+    case toggleMovingTarget
 }
 
 extension Screen {
@@ -43,6 +46,7 @@ extension Screen {
         case .over: return "TIME"
         case .duel: return "TWO PLAYERS"
         case .duelPause: return "PAUSED"
+        case .settings: return "SETTINGS"
         }
     }
 
@@ -52,11 +56,20 @@ extension Screen {
             return [
                 MenuItem(title: "Solo", action: .play),
                 MenuItem(title: "Two Players", action: .duel),
+                MenuItem(title: "Settings", action: .settings),
                 MenuItem(title: "How to Play", action: .help),
                 MenuItem(title: "Quit", action: .quit),
             ]
         case .help:
             return [MenuItem(title: "Back", action: .back)]
+        case .settings:
+            // Title reflects live state, so the row reads as a checkbox.
+            let on = Settings.shared.movingTarget
+            return [
+                MenuItem(title: "Moving Target:  \(on ? "ON" : "OFF")",
+                         action: .toggleMovingTarget),
+                MenuItem(title: "Back", action: .back),
+            ]
         case .duel:
             return [
                 MenuItem(title: "Host Online", action: .hostOnline),
@@ -118,6 +131,13 @@ extension Screen {
                 "",
                 "Online plays anywhere. Local Wi-Fi needs no internet,",
                 "but both Macs must be on the same network.",
+            ]
+        case .settings:
+            return [
+                "When on, the target drifts during a round, so a dig",
+                "has to be timed rather than just aimed.",
+                "",
+                "In a two-player match the host's choice is used for both.",
             ]
         case .pause, .over, .duelPause:
             return []
