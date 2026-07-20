@@ -40,7 +40,11 @@ enum DigResult {
 
 final class Game {
     private(set) var phase: Phase = .idle
+    /// The target's current position — which may drift during a round.
     private(set) var target = Point(x: 0.5, y: 0.5)
+    /// Where the target was placed. The drift path is anchored here, and it's
+    /// what the reveal trajectory starts from.
+    private(set) var targetCenter = Point(x: 0.5, y: 0.5)
     private(set) var decoys: [Point] = []
     private(set) var score = 0
     private(set) var round = 0
@@ -73,6 +77,7 @@ final class Game {
         }
         round += 1
         target = .random(inset: 0.12)
+        targetCenter = target
         // Decoys sit far enough from the target that their signature can't be
         // mistaken for the real thing.
         decoys = []
@@ -114,6 +119,13 @@ final class Game {
         }
         roundPenalty += Self.missCost
         return .miss
+    }
+
+    /// Drive the target to a drifted position. Only while hunting, so a found
+    /// target stays put for the reveal.
+    func moveTarget(to point: Point) {
+        guard phase == .hunting else { return }
+        target = point
     }
 
     /// Nearest decoy to a probe point, if one is within range.

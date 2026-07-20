@@ -72,6 +72,17 @@ final class GameView: NSView {
     /// Seconds of drift elapsed when the round ended, so the reveal can replay
     /// the exact path the hunted target travelled.
     private var revealElapsed: TimeInterval?
+    /// The setting in force for the current duel. The host's choice, adopted by
+    /// the guest over the wire, so both machines run identical rules.
+    private var duelMovingTarget = true
+
+    // Solo drift
+    private var soloPath: MovingTarget?
+    private var soloRoundStartedAt: Date?
+    /// The round a path was last minted for, so a new round refreshes it.
+    private var soloRoundTracked = 0
+    /// Drift elapsed when a solo round was won, for the reveal trajectory.
+    private var soloRevealElapsed: TimeInterval?
 
     private static let jamDuration: TimeInterval = 3.0
     /// Probes stay locked until the player lifts the finger they planted with.
@@ -175,12 +186,30 @@ final class GameView: NSView {
             flash("PRESS HARDER TO DIG", warning: false)
         }
 
+        driftSoloTarget(now)
+
         if game.phase == .hunting, let finger, fingerCount == 1, now >= nextPulseAt {
             emitSonar(at: finger)
             nextPulseAt = now.addingTimeInterval(game.pulseInterval(at: finger))
         }
 
         needsDisplay = true
+    }
+
+    /// Drift the solo target, honoring the Moving Target setting. A fresh path
+    /// is minted at the start of each round, anchored at where it was placed.
+    private func driftSoloTarget(_ now: Date) {
+        guard game.phase == .hunting else { return }
+        if game.round != soloRoundTracked {
+            soloRoundTracked = game.round
+            soloPath = Settings.shared.movingTarget
+                ? MovingTarget(center: game.targetCenter) : nil
+            soloRoundStartedAt = now
+            soloRevealElapsed = nil
+        }
+        if let soloPath, let start = soloRoundStartedAt {
+            game.moveTarget(to: soloPath.position(at: now.timeIntervalSince(start)))
+        }
     }
 
     /// Duel sonar. The opponent's target is already on this machine, so this is
@@ -211,6 +240,8 @@ final class GameView: NSView {
     /// Push each target's current drifted position into the match, so digging,
     /// sonar and the reveal all read a moving point without knowing it moves.
     private func driftTargets(_ now: Date) {
+        // With drift off, targets stay exactly where they were buried.
+        guard duelMovingTarget else { return }
         // Once the outcome is frozen (a find, or round end), stop moving so the
         // reveal marker and its trajectory agree on where it stopped.
         guard let match, match.phase == .seeking, revealElapsed == nil else { return }
@@ -317,6 +348,9 @@ final class GameView: NSView {
         revealRemaining = nil
         flashUntil = nil
         nudgeAt = nil
+        soloRoundTracked = 0     // force a fresh drift path for round 1
+        soloPath = nil
+        soloRevealElapsed = nil
         resumePlay()
     }
 
@@ -339,6 +373,11 @@ final class GameView: NSView {
         case .joinOnline: startJoining(online: true)
         case .restartMatch: requestRematch()
         case .leaveMatch: leaveDuel(); show(.main)
+        case .settings: show(.settings)
+        case .toggleMovingTarget:
+            Settings.shared.movingTarget.toggle()
+            Haptics.tap(.strong)     // the checkbox flip has a satisfying weight
+            needsDisplay = true
         }
     }
 
@@ -381,8 +420,10 @@ final class GameView: NSView {
                 self.lobby = .none
                 self.link.send(.hello(
                     protocolVersion: Message.currentVersion, playerName: NSUserName()))
-                // The host owns round numbering.
+                // The host owns round numbering and the match rules.
                 if self.match?.isHost == true {
+                    self.duelMovingTarget = Settings.shared.movingTarget
+                    self.link.send(.matchConfig(movingTarget: self.duelMovingTarget))
                     self.match?.beginRound(1)
                     self.link.send(.nextRound(round: 1))
                 } else {
@@ -414,6 +455,11 @@ final class GameView: NSView {
                 match.disconnect("Version mismatch")
                 link.stop()
             }
+
+        case .matchConfig(let movingTarget):
+            // Host's rules win; the guest never applies its own for a match.
+            guard !match.isHost else { return }
+            duelMovingTarget = movingTarget
 
         case .planted(let x, let y):
             let center = Point(x: x, y: y)
@@ -556,6 +602,9 @@ final class GameView: NSView {
         match.restartMatch()
         match.beginRound(1)
         rematchRequested = false
+        // Re-send the rules: the host may have changed them between matches.
+        duelMovingTarget = Settings.shared.movingTarget
+        link.send(.matchConfig(movingTarget: duelMovingTarget))
         link.send(.restartMatch(round: 1))
         enterDuelPlay()
     }
@@ -712,7 +761,7 @@ final class GameView: NSView {
                 switch screen {
                 case .pause: resumePlay()
                 case .duelPause: resumeDuel()
-                case .help, .duel: show(.main)
+                case .help, .duel, .settings: show(.main)
                 case .main, .over: break
                 }
             default: break
@@ -977,6 +1026,8 @@ final class GameView: NSView {
         case .found:
             nextPulseAt = .distantFuture
             Haptics.burst(count: 6, interval: 0.05, tap: .strong)
+            // Freeze the drift elapsed so the reveal can trace the path.
+            soloRevealElapsed = soloRoundStartedAt.map { Date().timeIntervalSince($0) }
             revealUntil = Date().addingTimeInterval(2.0)
         case .decoy:
             // A sour triple — you dug the thing that was lying to you.
@@ -1224,6 +1275,7 @@ final class GameView: NSView {
     /// was buried to where it was when the round ended. Empty if it barely
     /// moved, so a near-instant round doesn't draw a pointless dot.
     private func revealTrajectory() -> [Point] {
+        guard duelMovingTarget else { return [] }   // a static target has no path to show
         guard let theirPath, let revealElapsed, revealElapsed > 0.15 else { return [] }
         let steps = 64
         return (0...steps).map {
@@ -1354,6 +1406,30 @@ final class GameView: NSView {
         let color = found
             ? NSColor(calibratedRed: 0.3, green: 0.85, blue: 0.5, alpha: 1)
             : NSColor(calibratedRed: 0.9, green: 0.35, blue: 0.35, alpha: 1)
+
+        // If the target drifted, trace the path it took, faint-to-bright.
+        if let soloPath, let elapsed = soloRevealElapsed, elapsed > 0.15 {
+            let steps = 64
+            let path = (0...steps).map {
+                soloPath.position(at: elapsed * Double($0) / Double(steps))
+            }
+            for i in 1..<path.count {
+                let frac = Double(i) / Double(path.count - 1)
+                let seg = NSBezierPath()
+                seg.move(to: screenPoint(path[i - 1], in: arena))
+                seg.line(to: screenPoint(path[i], in: arena))
+                seg.lineWidth = 1.5
+                color.withAlphaComponent(0.12 + 0.5 * frac).setStroke()
+                seg.stroke()
+            }
+            let start = screenPoint(path[0], in: arena)
+            color.withAlphaComponent(0.5).setStroke()
+            let startRing = NSBezierPath(ovalIn: NSRect(
+                x: start.x - 5, y: start.y - 5, width: 10, height: 10))
+            startRing.lineWidth = 1.5
+            startRing.stroke()
+        }
+
         color.setFill()
         NSBezierPath(ovalIn: NSRect(
             x: target.x - 9, y: target.y - 9, width: 18, height: 18)).fill()
