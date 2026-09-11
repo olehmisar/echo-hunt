@@ -8,10 +8,10 @@ enum DuelRenderer {
 
     static func drawHostLobby(code: String, connected: Bool, in arena: NSRect, copied: Bool) {
         var y = arena.midY + 110
-        Draw.text("LOBBY", at: NSPoint(x: arena.midX, y: y), size: 26,
+        Draw.text(Loc.t("LOBBY"), at: NSPoint(x: arena.midX, y: y), size: 26,
                   color: Draw.Palette.bright, centered: true, tracking: 7)
         y -= 56
-        Draw.text("Give this code to your opponent",
+        Draw.text(Loc.t("Give this code to your opponent"),
                   at: NSPoint(x: arena.midX, y: y), size: 13,
                   color: Draw.Palette.dim, centered: true)
         y -= 62
@@ -21,25 +21,25 @@ enum DuelRenderer {
                   color: Draw.Palette.finger, centered: true, tracking: 14)
         y -= 54
 
-        Draw.text(copied ? "copied to clipboard" : "press C to copy",
+        Draw.text(copied ? Loc.t("copied to clipboard") : Loc.t("press C to copy"),
                   at: NSPoint(x: arena.midX, y: y), size: 12,
                   color: copied ? Draw.Palette.good : Draw.Palette.faint, centered: true)
         y -= 44
 
-        Draw.text(connected ? "opponent connected" : "waiting for opponent…",
+        Draw.text(connected ? Loc.t("opponent connected") : Loc.t("waiting for opponent…"),
                   at: NSPoint(x: arena.midX, y: y), size: 14,
                   color: connected ? Draw.Palette.good : Draw.Palette.dim, centered: true)
 
-        Draw.text("esc — back", at: NSPoint(x: arena.midX, y: arena.minY + 26),
+        Draw.text(Loc.t("esc — back"), at: NSPoint(x: arena.midX, y: arena.minY + 26),
                   size: 11, color: Draw.Palette.faint, centered: true)
     }
 
     static func drawJoinEntry(typed: String, status: String?, in arena: NSRect) {
         var y = arena.midY + 90
-        Draw.text("JOIN A GAME", at: NSPoint(x: arena.midX, y: y), size: 26,
+        Draw.text(Loc.t("JOIN A GAME"), at: NSPoint(x: arena.midX, y: y), size: 26,
                   color: Draw.Palette.bright, centered: true, tracking: 7)
         y -= 56
-        Draw.text("Type or paste your opponent's code",
+        Draw.text(Loc.t("Type or paste your opponent's code"),
                   at: NSPoint(x: arena.midX, y: y), size: 13,
                   color: Draw.Palette.dim, centered: true)
         y -= 70
@@ -65,11 +65,11 @@ enum DuelRenderer {
             Draw.text(status, at: NSPoint(x: arena.midX, y: y), size: 13,
                       color: Draw.Palette.warn, centered: true)
         } else if LobbyCode.isComplete(typed) {
-            Draw.text("press return to connect", at: NSPoint(x: arena.midX, y: y),
+            Draw.text(Loc.t("press return to connect"), at: NSPoint(x: arena.midX, y: y),
                       size: 13, color: Draw.Palette.good, centered: true)
         }
 
-        Draw.text("⌘V paste      delete      esc — back",
+        Draw.text(Loc.t("⌘V paste      delete      esc — back"),
                   at: NSPoint(x: arena.midX, y: arena.minY + 26),
                   size: 11, color: Draw.Palette.faint, centered: true)
     }
@@ -88,11 +88,11 @@ enum DuelRenderer {
         path.stroke()
 
         let legal = finger.map(PlantingArea.contains) ?? true
-        Draw.text("HIDE YOUR TARGET", at: NSPoint(x: arena.midX, y: arena.maxY - 44),
+        Draw.text(Loc.t("HIDE YOUR TARGET"), at: NSPoint(x: arena.midX, y: arena.maxY - 44),
                   size: 17, color: Draw.Palette.bright, centered: true, tracking: 4)
         Draw.text(legal
-                    ? "force click inside the area to bury it"
-                    : "too close to the edge — move inside the area",
+                    ? Loc.t("force click inside the area to bury it")
+                    : Loc.t("too close to the edge — move inside the area"),
                   at: NSPoint(x: arena.midX, y: arena.maxY - 72),
                   size: 13, color: legal ? Draw.Palette.dim : Draw.Palette.warn,
                   centered: true)
@@ -113,14 +113,14 @@ enum DuelRenderer {
                 x: center.x - 11, y: center.y - 11, width: 22, height: 22))
             ring.lineWidth = 1.5
             ring.stroke()
-            Draw.text("yours", at: NSPoint(x: center.x, y: center.y + 16),
+            Draw.text(Loc.t("yours"), at: NSPoint(x: center.x, y: center.y + 16),
                       size: 10, color: Draw.Palette.warn.withAlphaComponent(0.8),
                       centered: true)
         }
 
-        Draw.text("TARGET BURIED", at: NSPoint(x: arena.midX, y: arena.midY + 14),
+        Draw.text(Loc.t("TARGET BURIED"), at: NSPoint(x: arena.midX, y: arena.midY + 14),
                   size: 17, color: Draw.Palette.good, centered: true, tracking: 4)
-        Draw.text("waiting for your opponent to hide theirs…",
+        Draw.text(Loc.t("waiting for your opponent to hide theirs…"),
                   at: NSPoint(x: arena.midX, y: arena.midY - 16),
                   size: 13, color: Draw.Palette.dim, centered: true)
     }
@@ -144,7 +144,7 @@ enum DuelRenderer {
                 x: center.x - 10, y: center.y - 10, width: 20, height: 20))
             ring.lineWidth = 2
             ring.stroke()
-            Draw.text("yours", at: NSPoint(x: center.x, y: center.y + 17),
+            Draw.text(Loc.t("yours"), at: NSPoint(x: center.x, y: center.y + 17),
                       size: 9, color: Draw.Palette.warn.withAlphaComponent(0.75),
                       centered: true)
         }
@@ -165,7 +165,7 @@ enum DuelRenderer {
             x: center.x - 6, y: center.y - 6, width: 12, height: 12))
         dot.lineWidth = 2
         dot.stroke()
-        Draw.text("them", at: NSPoint(x: center.x, y: center.y - 24),
+        Draw.text(Loc.t("them"), at: NSPoint(x: center.x, y: center.y - 24),
                   size: 9,
                   color: NSColor(calibratedRed: 1, green: 0.68, blue: 0.4, alpha: 0.8 * alpha),
                   centered: true)
@@ -179,12 +179,12 @@ enum DuelRenderer {
             // The instruction matters more than the countdown: a finger left
             // resting on the spot you just planted is a marker pointing at
             // your own target.
-            Draw.text("LIFT YOUR FINGER", at: NSPoint(x: arena.midX, y: arena.midY + 46),
+            Draw.text(Loc.t("LIFT YOUR FINGER"), at: NSPoint(x: arena.midX, y: arena.midY + 46),
                       size: 30, color: stillHolding ? Draw.Palette.bad : Draw.Palette.good,
                       centered: true, tracking: 8)
             Draw.text(stillHolding
-                        ? "they can see where your finger is — you're pointing at your own target"
-                        : "good — they can't see you now",
+                        ? Loc.t("they can see where your finger is — you're pointing at your own target")
+                        : Loc.t("good — they can't see you now"),
                       at: NSPoint(x: arena.midX, y: arena.midY + 12),
                       size: 14,
                       color: stillHolding ? Draw.Palette.bad : Draw.Palette.dim,
@@ -198,21 +198,21 @@ enum DuelRenderer {
         // The lead-in is over but they never lifted, so probing is still
         // suppressed. Say why, or it looks like the game is broken.
         if stillHolding {
-            Draw.text("LIFT YOUR FINGER — you're still pointing at your target",
+            Draw.text(Loc.t("LIFT YOUR FINGER — you're still pointing at your target"),
                       at: NSPoint(x: arena.midX, y: arena.maxY - 44),
                       size: 14, color: Draw.Palette.bad, centered: true)
             return
         }
         if awaitingRuling {
-            Draw.text("FOUND IT — waiting for the verdict…",
+            Draw.text(Loc.t("FOUND IT — waiting for the verdict…"),
                       at: NSPoint(x: arena.midX, y: arena.maxY - 44),
                       size: 15, color: Draw.Palette.good, centered: true)
         } else if isOut {
-            Draw.text("OUT OF DIGS — the round is theirs unless they miss twice too",
+            Draw.text(Loc.t("OUT OF DIGS — the round is theirs unless they miss twice too"),
                       at: NSPoint(x: arena.midX, y: arena.maxY - 44),
                       size: 13, color: Draw.Palette.bad, centered: true)
         } else {
-            Draw.text("FIND THEIRS FIRST", at: NSPoint(x: arena.midX, y: arena.maxY - 40),
+            Draw.text(Loc.t("FIND THEIRS FIRST"), at: NSPoint(x: arena.midX, y: arena.maxY - 40),
                       size: 13, color: Draw.Palette.faint, centered: true, tracking: 3)
         }
     }
@@ -248,7 +248,7 @@ enum DuelRenderer {
                 x: start.x - 5, y: start.y - 5, width: 10, height: 10))
             startRing.lineWidth = 1.5
             startRing.stroke()
-            Draw.text("buried here", at: NSPoint(x: start.x, y: start.y - 16),
+            Draw.text(Loc.t("buried here"), at: NSPoint(x: start.x, y: start.y - 16),
                       size: 9, color: color.withAlphaComponent(0.6), centered: true)
         }
 
@@ -283,7 +283,7 @@ enum DuelRenderer {
             NSBezierPath(ovalIn: NSRect(
                 x: center.x - 9, y: center.y - 9, width: 18, height: 18)).fill()
 
-            Draw.text(won ? "you found it" : "it was here",
+            Draw.text(won ? Loc.t("you found it") : Loc.t("it was here"),
                       at: NSPoint(x: center.x, y: center.y + 32),
                       size: 11, color: color, centered: true)
         }
@@ -291,11 +291,11 @@ enum DuelRenderer {
         var y = arena.midY + 40
         let headline: String
         if matchOver {
-            headline = won ? "YOU WIN THE MATCH" : "YOU LOSE THE MATCH"
+            headline = won ? Loc.t("YOU WIN THE MATCH") : Loc.t("YOU LOSE THE MATCH")
         } else if drawn {
-            headline = "NOBODY FOUND IT"
+            headline = Loc.t("NOBODY FOUND IT")
         } else {
-            headline = won ? "ROUND WON" : "ROUND LOST"
+            headline = won ? Loc.t("ROUND WON") : Loc.t("ROUND LOST")
         }
         Draw.text(headline, at: NSPoint(x: arena.midX, y: y), size: 26,
                   color: drawn ? Draw.Palette.warn : (won ? Draw.Palette.good : Draw.Palette.bad),
@@ -305,9 +305,9 @@ enum DuelRenderer {
                   at: NSPoint(x: arena.midX, y: y), size: 30,
                   color: Draw.Palette.bright, centered: true, tracking: 4)
         y -= 46
-        Draw.text(drawn ? "you both ran out of digs — nobody scores"
-                        : (won ? "they were hunting yours all along"
-                               : "that's where they buried it"),
+        Draw.text(drawn ? Loc.t("you both ran out of digs — nobody scores")
+                        : (won ? Loc.t("they were hunting yours all along")
+                               : Loc.t("that's where they buried it")),
                   at: NSPoint(x: arena.midX, y: y), size: 12,
                   color: Draw.Palette.dim, centered: true)
         y -= 40
@@ -316,22 +316,22 @@ enum DuelRenderer {
             // A rematch keeps the connection, so nobody trades a code again.
             let prompt: String
             if match.isHost {
-                prompt = "return — rematch          esc — leave"
+                prompt = Loc.t("return — rematch          esc — leave")
             } else if rematchRequested {
-                prompt = "asked for a rematch — waiting for the host…"
+                prompt = Loc.t("asked for a rematch — waiting for the host…")
             } else {
-                prompt = "return — ask for a rematch          esc — leave"
+                prompt = Loc.t("return — ask for a rematch          esc — leave")
             }
             Draw.text(prompt, at: NSPoint(x: arena.midX, y: y),
                       size: 13,
                       color: rematchRequested ? Draw.Palette.dim : Draw.Palette.warn,
                       centered: true)
         } else if match.isHost {
-            Draw.text("press return for the next round",
+            Draw.text(Loc.t("press return for the next round"),
                       at: NSPoint(x: arena.midX, y: y), size: 13,
                       color: Draw.Palette.warn, centered: true)
         } else {
-            Draw.text("waiting for the host to start the next round…",
+            Draw.text(Loc.t("waiting for the host to start the next round…"),
                       at: NSPoint(x: arena.midX, y: y), size: 13,
                       color: Draw.Palette.dim, centered: true)
         }
@@ -340,23 +340,24 @@ enum DuelRenderer {
     static func drawDisconnected(reason: String, in arena: NSRect) {
         NSColor(calibratedWhite: 0.05, alpha: 0.85).setFill()
         arena.fill()
-        Draw.text("DISCONNECTED", at: NSPoint(x: arena.midX, y: arena.midY + 20),
+        Draw.text(Loc.t("DISCONNECTED"), at: NSPoint(x: arena.midX, y: arena.midY + 20),
                   size: 24, color: Draw.Palette.bad, centered: true, tracking: 5)
         Draw.text(reason, at: NSPoint(x: arena.midX, y: arena.midY - 14),
                   size: 13, color: Draw.Palette.dim, centered: true)
-        Draw.text("esc — back to the menu",
+        Draw.text(Loc.t("esc — back to the menu"),
                   at: NSPoint(x: arena.midX, y: arena.midY - 50),
                   size: 12, color: Draw.Palette.faint, centered: true)
     }
 
     /// Always-visible match state during play.
     static func drawHUD(match: DuelMatch, in bounds: NSRect) {
-        let role = match.isHost ? "HOST" : "GUEST"
-        var hud = "ROUND \(match.round)     YOU \(match.myScore) — \(match.opponentScore) THEM"
-            + "     FIRST TO \(DuelMatch.winsNeeded)"
+        let role = Loc.t(match.isHost ? "HOST" : "GUEST")
+        var hud = "\(Loc.t("ROUND")) \(match.round)"
+            + "     \(Loc.t("YOU")) \(match.myScore) — \(match.opponentScore) \(Loc.t("THEM"))"
+            + "     \(Loc.t("FIRST TO")) \(DuelMatch.winsNeeded)"
         if match.phase == .seeking {
-            hud += "     DIGS \(match.digsRemaining)/\(DuelMatch.digsPerRound)"
-            hud += match.myJamUsed ? "     JAM SPENT" : "     JAM READY"
+            hud += "     \(Loc.t("DIGS")) \(match.digsRemaining)/\(DuelMatch.digsPerRound)"
+            hud += "     " + Loc.t(match.myJamUsed ? "JAM SPENT" : "JAM READY")
         }
         hud += "     \(role)"
         Draw.text(hud, at: NSPoint(x: bounds.midX, y: 62), size: 11,

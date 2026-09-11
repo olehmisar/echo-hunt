@@ -35,18 +35,20 @@ enum MenuAction {
     case leaveMatch
     case settings
     case toggleMovingTarget
+    case cycleLanguage
 }
 
 extension Screen {
+    /// ECHO HUNT is the wordmark and stays; everything else is localized.
     var title: String {
         switch self {
         case .main: return "ECHO HUNT"
-        case .help: return "HOW TO PLAY"
-        case .pause: return "PAUSED"
-        case .over: return "TIME"
-        case .duel: return "TWO PLAYERS"
-        case .duelPause: return "PAUSED"
-        case .settings: return "SETTINGS"
+        case .help: return Loc.t("HOW TO PLAY")
+        case .pause: return Loc.t("PAUSED")
+        case .over: return Loc.t("TIME")
+        case .duel: return Loc.t("TWO PLAYERS")
+        case .duelPause: return Loc.t("PAUSED")
+        case .settings: return Loc.t("SETTINGS")
         }
     }
 
@@ -54,63 +56,66 @@ extension Screen {
         switch self {
         case .main:
             return [
-                MenuItem(title: "Solo", action: .play),
-                MenuItem(title: "Two Players", action: .duel),
-                MenuItem(title: "Settings", action: .settings),
-                MenuItem(title: "How to Play", action: .help),
-                MenuItem(title: "Quit", action: .quit),
+                MenuItem(title: Loc.t("Solo"), action: .play),
+                MenuItem(title: Loc.t("Two Players"), action: .duel),
+                MenuItem(title: Loc.t("Settings"), action: .settings),
+                MenuItem(title: Loc.t("How to Play"), action: .help),
+                MenuItem(title: Loc.t("Quit"), action: .quit),
             ]
         case .help:
-            return [MenuItem(title: "Back", action: .back)]
+            return [MenuItem(title: Loc.t("Back"), action: .back)]
         case .settings:
-            // Title reflects live state, so the row reads as a checkbox.
+            // Titles reflect live state, so the rows read as controls.
             let on = Settings.shared.movingTarget
             return [
-                MenuItem(title: "Moving Target:  \(on ? "ON" : "OFF")",
+                MenuItem(title: "\(Loc.t("Moving Target")):  \(Loc.t(on ? "ON" : "OFF"))",
                          action: .toggleMovingTarget),
-                MenuItem(title: "Back", action: .back),
+                MenuItem(title: "\(Loc.t("Language")):  \(Settings.shared.language.displayName)",
+                         action: .cycleLanguage),
+                MenuItem(title: Loc.t("Back"), action: .back),
             ]
         case .duel:
             return [
-                MenuItem(title: "Host Online", action: .hostOnline),
-                MenuItem(title: "Join Online", action: .joinOnline),
-                MenuItem(title: "Host on Local Wi-Fi", action: .hostGame),
-                MenuItem(title: "Join on Local Wi-Fi", action: .joinGame),
-                MenuItem(title: "Back", action: .back),
+                MenuItem(title: Loc.t("Host Online"), action: .hostOnline),
+                MenuItem(title: Loc.t("Join Online"), action: .joinOnline),
+                MenuItem(title: Loc.t("Host on Local Wi-Fi"), action: .hostGame),
+                MenuItem(title: Loc.t("Join on Local Wi-Fi"), action: .joinGame),
+                MenuItem(title: Loc.t("Back"), action: .back),
             ]
         case .duelPause:
             return [
-                MenuItem(title: "Resume", action: .resume),
-                MenuItem(title: "Restart Match", action: .restartMatch),
-                MenuItem(title: "Leave Match", action: .leaveMatch),
+                MenuItem(title: Loc.t("Resume"), action: .resume),
+                MenuItem(title: Loc.t("Restart Match"), action: .restartMatch),
+                MenuItem(title: Loc.t("Leave Match"), action: .leaveMatch),
             ]
         // Quit lives only on the main menu — leaving the game shouldn't be one
         // stray keystroke away mid-round.
         case .pause:
             return [
-                MenuItem(title: "Resume", action: .resume),
-                MenuItem(title: "Restart", action: .restart),
-                MenuItem(title: "Main Menu", action: .mainMenu),
+                MenuItem(title: Loc.t("Resume"), action: .resume),
+                MenuItem(title: Loc.t("Restart"), action: .restart),
+                MenuItem(title: Loc.t("Main Menu"), action: .mainMenu),
             ]
         case .over:
             return [
-                MenuItem(title: "Play Again", action: .restart),
-                MenuItem(title: "Main Menu", action: .mainMenu),
+                MenuItem(title: Loc.t("Play Again"), action: .restart),
+                MenuItem(title: Loc.t("Main Menu"), action: .mainMenu),
             ]
         }
     }
 
     /// Lines shown above the items.
     var blurb: [String] {
+        let keys: [String]
         switch self {
         case .main:
-            return [
+            keys = [
                 "Something is hidden on your trackpad.",
                 "The screen will never show you where.",
                 "Find it by feel.",
             ]
         case .help:
-            return [
+            keys = [
                 "ONE FINGER      the pad ticks faster as you close in",
                 "TWO FINGERS     a ping — the delay before the thump is distance",
                 "STUTTER         a double-tick means a decoy",
@@ -123,7 +128,7 @@ extension Screen {
                 "Five rounds. Decoys accumulate as you go.",
             ]
         case .duel:
-            return [
+            keys = [
                 "Each of you hides a target on your own trackpad.",
                 "Then you both race to find the other's — but the",
                 "targets drift, so a dig must be timed, not just aimed.",
@@ -133,14 +138,16 @@ extension Screen {
                 "but both Macs must be on the same network.",
             ]
         case .settings:
-            return [
+            keys = [
                 "When on, the target drifts during a round, so a dig",
                 "has to be timed rather than just aimed.",
                 "",
                 "In a two-player match the host's choice is used for both.",
             ]
         case .pause, .over, .duelPause:
-            return []
+            keys = []
         }
+        // Blank lines stay blank; everything else is translated.
+        return keys.map { $0.isEmpty ? $0 : Loc.t($0) }
     }
 }

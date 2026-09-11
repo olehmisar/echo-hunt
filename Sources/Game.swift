@@ -57,6 +57,9 @@ final class Game {
     /// Revealed only after a round is won — during play the arena is blank.
     private(set) var lastDig: Point?
     private(set) var lastResult: String = ""
+    /// Whether the last dig found the target — a flag, so callers don't have to
+    /// parse the (now localized) result text.
+    private(set) var lastFound = false
 
     static let roundCount = 5
     static let missCost = 25
@@ -105,9 +108,11 @@ final class Game {
             let base = 100 + Int(precision * 100)
             let points = max(Self.minimumRoundScore, base - roundPenalty)
             score += points
+            let headline = "\(Loc.t("FOUND"))  +\(points)"
             lastResult = roundPenalty > 0
-                ? "FOUND  +\(points)   (−\(roundPenalty) wasted)"
-                : "FOUND  +\(points)"
+                ? "\(headline)   (−\(roundPenalty) \(Loc.t("wasted")))"
+                : headline
+            lastFound = true
             phase = .reveal
             return .found(points: points)
         }

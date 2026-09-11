@@ -183,7 +183,7 @@ final class GameView: NSView {
         // No dig followed the click, so the press really was too soft.
         if let due = nudgeAt, now >= due {
             nudgeAt = nil
-            flash("PRESS HARDER TO DIG", warning: false)
+            flash(Loc.t("PRESS HARDER TO DIG"), warning: false)
         }
 
         driftSoloTarget(now)
@@ -378,6 +378,10 @@ final class GameView: NSView {
             Settings.shared.movingTarget.toggle()
             Haptics.tap(.strong)     // the checkbox flip has a satisfying weight
             needsDisplay = true
+        case .cycleLanguage:
+            Settings.shared.language = Settings.shared.language.next
+            Haptics.tap(.strong)
+            needsDisplay = true
         }
     }
 
@@ -451,7 +455,7 @@ final class GameView: NSView {
         switch message {
         case .hello(let version, _):
             if version != Message.currentVersion {
-                lobbyStatus = "Version mismatch — both players need the same build."
+                lobbyStatus = Loc.t("Version mismatch — both players need the same build.")
                 match.disconnect("Version mismatch")
                 link.stop()
             }
@@ -483,7 +487,7 @@ final class GameView: NSView {
             jammedUntil = Date().addingTimeInterval(Self.jamDuration)
             nextJamNoiseAt = Date()
             Haptics.burst(count: 4, interval: 0.05, tap: .weak)
-            flash("SONAR JAMMED")
+            flash(Loc.t("SONAR JAMMED"))
 
         case .roundResult(let winner, let hostScore, let guestScore):
             guard !match.isHost else { return }
@@ -809,12 +813,12 @@ final class GameView: NSView {
             }
             if event.keyCode == 36 || event.keyCode == 76 {                   // return
                 guard LobbyCode.isComplete(typedCode) else {
-                    lobbyStatus = "Enter all \(LobbyCode.length) characters."
+                    lobbyStatus = "\(Loc.t("Enter all")) \(LobbyCode.length) \(Loc.t("characters."))"
                     Haptics.tap(.weak)                     // a small "not yet" bump
                     return true
                 }
                 Haptics.tap(.strong)
-                lobbyStatus = "Searching for \(typedCode)…"
+                lobbyStatus = "\(Loc.t("Searching for")) \(typedCode)…"
                 link.join(code: typedCode)
                 return true
             }
@@ -848,9 +852,9 @@ final class GameView: NSView {
                 if match.phase == .seeking, seekArmed, match.useJam() {
                     link.send(.jam)
                     Haptics.play(.found)
-                    flash("JAMMED THEM — 3s")
+                    flash(Loc.t("JAMMED THEM — 3s"))
                 } else if match.myJamUsed {
-                    flash("JAM ALREADY USED")
+                    flash(Loc.t("JAM ALREADY USED"))
                 }
                 return true
             }
@@ -959,7 +963,7 @@ final class GameView: NSView {
             guard match.plant(at: finger) else {
                 // Outside the legal region — refuse, and say so by feel too.
                 Haptics.burst(count: 2, interval: 0.09, tap: .weak)
-                flash("TOO CLOSE TO THE EDGE")
+                flash(Loc.t("TOO CLOSE TO THE EDGE"))
                 return
             }
             ripples.append(Ripple(point: finger, at: Date(), hard: true))
@@ -972,7 +976,7 @@ final class GameView: NSView {
             guard !match.awaitingRuling, !match.isOut else { return }
             // The lead-in exists precisely to absorb this press.
             guard seekArmed else {
-                flash("GET READY…")
+                flash(Loc.t("GET READY…"))
                 return
             }
             ripples.append(Ripple(point: finger, at: Date(), hard: true))
@@ -991,12 +995,12 @@ final class GameView: NSView {
                 }
             case .miss(let remaining):
                 Haptics.burst(count: 2, interval: 0.13, tap: .weak)
-                flash("MISS — \(remaining) dig\(remaining == 1 ? "" : "s") left")
+                flash("\(Loc.t("MISS")) — \(remaining) \(Loc.t(remaining == 1 ? "dig left" : "digs left"))")
             case .eliminated:
                 // Out of digs: still connected, but the round is no longer
                 // winnable for me.
                 Haptics.burst(count: 3, interval: 0.12, tap: .strong)
-                flash("OUT OF DIGS")
+                flash(Loc.t("OUT OF DIGS"))
                 nextPulseAt = .distantFuture
                 if match.isHost {
                     if let verdict = match.eliminationVerdict() { hostConclude(verdict) }
@@ -1032,10 +1036,10 @@ final class GameView: NSView {
         case .decoy:
             // A sour triple — you dug the thing that was lying to you.
             Haptics.burst(count: 3, interval: 0.11, tap: .strong)
-            flash("DECOY  −\(Game.decoyCost)")
+            flash("\(Loc.t("DECOY"))  −\(Game.decoyCost)")
         case .miss:
             Haptics.burst(count: 2, interval: 0.13, tap: .weak)
-            flash("MISS  −\(Game.missCost)")
+            flash("\(Loc.t("MISS"))  −\(Game.missCost)")
         case nil:
             break
         }
@@ -1125,7 +1129,7 @@ final class GameView: NSView {
         y -= 54
 
         if screen == .over {
-            draw("Score \(game.score)", at: NSPoint(x: arena.midX, y: y), size: 17,
+            draw("\(Loc.t("Score")) \(game.score)", at: NSPoint(x: arena.midX, y: y), size: 17,
                  color: NSColor(calibratedRed: 0.4, green: 0.85, blue: 0.6, alpha: 1),
                  centered: true)
             y -= 40
@@ -1163,14 +1167,14 @@ final class GameView: NSView {
             y -= itemHeight
         }
 
-        draw("↑ ↓ select      return confirm" + (screen == .pause ? "      esc resume" : ""),
+        draw(Loc.t("↑ ↓ select      return confirm") + (screen == .pause ? Loc.t("      esc resume") : ""),
              at: NSPoint(x: arena.midX, y: arena.minY + 26), size: 11,
              color: NSColor(calibratedWhite: 0.35, alpha: 1), centered: true)
     }
 
     /// Persistent in-game affordance — you should never have to guess the way out.
     private func drawMenuHint() {
-        draw("FORCE CLICK OR SPACE — DIG          ESC — MENU",
+        draw("\(Loc.t("FORCE CLICK OR SPACE —")) \(Loc.t("DIG"))          \(Loc.t("ESC — MENU"))",
              at: NSPoint(x: bounds.midX, y: 38), size: 11,
              color: NSColor(calibratedWhite: 0.38, alpha: 1), centered: true, tracking: 2)
     }
@@ -1240,12 +1244,12 @@ final class GameView: NSView {
         DuelRenderer.drawHUD(match: match, in: bounds)
         drawFlash(in: arena)
         if match.phase == .planting || match.phase == .seeking {
-            var hint = "FORCE CLICK OR SPACE — \(match.phase == .planting ? "BURY" : "DIG")"
+            var hint = "\(Loc.t("FORCE CLICK OR SPACE —")) \(Loc.t(match.phase == .planting ? "BURY" : "DIG"))"
             // Surface the jam only when it can actually be used.
             if match.phase == .seeking, seekArmed, !match.myJamUsed, !match.isOut {
-                hint += "          J — JAM"
+                hint += "          \(Loc.t("J — JAM"))"
             }
-            hint += "          ESC — MENU"
+            hint += "          \(Loc.t("ESC — MENU"))"
             Draw.text(hint, at: NSPoint(x: bounds.midX, y: 38), size: 11,
                       color: Draw.Palette.faint, centered: true, tracking: 2)
         }
@@ -1263,7 +1267,7 @@ final class GameView: NSView {
         let throb = 0.35 + 0.35 * abs(sin(remaining * 6))
         NSColor(calibratedRed: 0.9, green: 0.25, blue: 0.3, alpha: 0.10 * throb).setFill()
         arena.fill()
-        Draw.text("SONAR JAMMED", at: NSPoint(x: arena.midX, y: arena.midY + 8),
+        Draw.text(Loc.t("SONAR JAMMED"), at: NSPoint(x: arena.midX, y: arena.midY + 8),
                   size: 26, color: NSColor(calibratedRed: 1, green: 0.4, blue: 0.4, alpha: throb + 0.3),
                   centered: true, tracking: 6)
         Draw.text(String(format: "%.1f", remaining),
@@ -1385,13 +1389,13 @@ final class GameView: NSView {
         }
 
         if contacts.isEmpty && game.phase == .hunting {
-            draw("touch the trackpad", at: NSPoint(x: arena.midX, y: arena.midY),
+            draw(Loc.t("touch the trackpad"), at: NSPoint(x: arena.midX, y: arena.midY),
                  size: 12.5, color: NSColor(calibratedWhite: 0.3, alpha: 1), centered: true)
         }
     }
 
     private func drawReveal(in arena: NSRect) {
-        let found = game.lastResult.hasPrefix("FOUND")
+        let found = game.lastFound
 
         for decoy in game.decoys {
             let center = screenPoint(decoy, in: arena)
@@ -1458,9 +1462,9 @@ final class GameView: NSView {
     }
 
     private func drawHUD() {
-        var hud = "ROUND \(min(game.round, Game.roundCount))/\(Game.roundCount)"
-            + "     SCORE \(game.score)"
-        if game.roundPenalty > 0 { hud += "     ROUND −\(game.roundPenalty)" }
+        var hud = "\(Loc.t("ROUND")) \(min(game.round, Game.roundCount))/\(Game.roundCount)"
+            + "     \(Loc.t("SCORE")) \(game.score)"
+        if game.roundPenalty > 0 { hud += "     \(Loc.t("ROUND")) −\(game.roundPenalty)" }
         draw(hud, at: NSPoint(x: bounds.midX, y: 62), size: 11,
              color: NSColor(calibratedWhite: 0.45, alpha: 1), centered: true)
     }
