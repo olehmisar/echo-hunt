@@ -60,6 +60,9 @@ extension Screen {
                 MenuItem(title: Loc.t("Two Players"), action: .duel),
                 MenuItem(title: Loc.t("Settings"), action: .settings),
                 MenuItem(title: Loc.t("How to Play"), action: .help),
+                // The selector shows the current language as flag + name, and
+                // cycles on activation.
+                MenuItem(title: Settings.shared.language.label, action: .cycleLanguage),
                 MenuItem(title: Loc.t("Quit"), action: .quit),
             ]
         case .help:
@@ -70,8 +73,6 @@ extension Screen {
             return [
                 MenuItem(title: "\(Loc.t("Moving Target")):  \(Loc.t(on ? "ON" : "OFF"))",
                          action: .toggleMovingTarget),
-                MenuItem(title: "\(Loc.t("Language")):  \(Settings.shared.language.displayName)",
-                         action: .cycleLanguage),
                 MenuItem(title: Loc.t("Back"), action: .back),
             ]
         case .duel:
