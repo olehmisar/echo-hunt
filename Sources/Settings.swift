@@ -11,12 +11,18 @@ final class Settings {
     private let defaults = UserDefaults.standard
     private enum Key {
         static let movingTarget = "movingTarget"
+        static let language = "language"
     }
 
     /// Whether the target drifts during a round. On by default — it's the
     /// livelier game — but a checkbox turns it off for the classic still hunt.
     var movingTarget: Bool {
         didSet { defaults.set(movingTarget, forKey: Key.movingTarget) }
+    }
+
+    /// UI language. Defaults to English; the menu selector switches it.
+    var language: Language {
+        didSet { defaults.set(language.rawValue, forKey: Key.language) }
     }
 
     private init() {
@@ -27,5 +33,7 @@ final class Settings {
         } else {
             movingTarget = defaults.bool(forKey: Key.movingTarget)
         }
+        language = defaults.string(forKey: Key.language)
+            .flatMap(Language.init) ?? .en
     }
 }
