@@ -12,6 +12,17 @@ enum Language: String, CaseIterable {
         }
     }
 
+    /// Flag emoji, so the selector reads at a glance without knowing the words.
+    var flag: String {
+        switch self {
+        case .en: return "🇬🇧"
+        case .uk: return "🇺🇦"
+        }
+    }
+
+    /// Flag + name, as shown on the main-menu selector.
+    var label: String { "\(flag)  \(displayName)" }
+
     var next: Language {
         let all = Language.allCases
         return all[(all.firstIndex(of: self)! + 1) % all.count]
